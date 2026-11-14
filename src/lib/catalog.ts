@@ -213,19 +213,31 @@ export interface Region {
 }
 
 export const REGIONS: Region[] = [
+  // Americas
+  { id: "us-corn-belt", name: "US Corn Belt (Iowa, Illinois)", bbox: { west: -96.5, south: 39.0, east: -87.0, north: 44.0 }, note: "World breadbasket; heavier spring rain" },
+  { id: "california", name: "California Central Valley", bbox: { west: -122.5, south: 35.0, east: -119.0, north: 40.0 }, note: "Agriculture, drought, wildfire" },
+  { id: "amazon", name: "Central Amazon", bbox: { west: -65.0, south: -8.0, east: -55.0, north: -2.0 }, note: "Rainforest; drought years 2005, 2010, 2023" },
+  { id: "patagonia", name: "Patagonia", bbox: { west: -72.5, south: -50.0, east: -66.0, north: -42.0 }, note: "Glaciers, steppe and strong westerly winds" },
+  // Europe and Africa
+  { id: "central-europe", name: "Central Europe (Germany, Czechia)", bbox: { west: 6.0, south: 47.5, east: 18.0, north: 54.0 }, note: "Summer heat and drought since 2018" },
+  { id: "iberia", name: "Iberian Peninsula", bbox: { west: -9.5, south: 36.0, east: 3.0, north: 43.5 }, note: "Mediterranean drying, heatwaves" },
+  { id: "sahel", name: "West African Sahel", bbox: { west: -5.0, south: 12.0, east: 10.0, north: 16.0 }, note: "Rainfall recovery after the 1970s-80s droughts" },
+  { id: "east-africa", name: "Horn of Africa (Kenya, Ethiopia, Somalia)", bbox: { west: 36.0, south: -2.0, east: 46.0, north: 8.0 }, note: "Failed rainy seasons 2020-2023" },
+  { id: "nile-delta", name: "Nile Delta", bbox: { west: 29.5, south: 29.5, east: 32.5, north: 31.6 }, note: "Heat, water and a growing population" },
+  // Asia and Oceania
+  { id: "middle-east-gulf", name: "Arabian Gulf coast", bbox: { west: 47.0, south: 22.0, east: 57.0, north: 27.5 }, note: "Among the hottest, most humid places on Earth" },
   { id: "delhi-ncr", name: "Delhi NCR", bbox: { west: 76.8, south: 28.2, east: 77.8, north: 29.0 }, note: "Megacity, winter haze, pre-monsoon heat" },
   { id: "nw-india", name: "Northwest India (Punjab, Haryana)", bbox: { west: 73.5, south: 28.0, east: 77.5, north: 32.0 }, note: "Irrigated breadbasket; GRACE groundwater-loss region" },
-  { id: "indo-gangetic", name: "Indo-Gangetic Plain", bbox: { west: 78.0, south: 24.0, east: 88.0, north: 30.0 }, note: "Densely populated river plain" },
   { id: "india-monsoon", name: "Central India monsoon belt", bbox: { west: 74.0, south: 18.0, east: 86.0, north: 26.0 }, note: "Monsoon core zone" },
-  { id: "kerala", name: "Kerala and the Western Ghats", bbox: { west: 74.8, south: 8.2, east: 77.4, north: 12.8 }, note: "2018 floods, 2024 Wayanad landslides" },
-  { id: "mumbai", name: "Mumbai and Konkan coast", bbox: { west: 72.6, south: 18.4, east: 73.6, north: 19.6 }, note: "Coastal megacity, extreme rain days" },
-  { id: "sundarbans", name: "Sundarbans delta", bbox: { west: 88.0, south: 21.5, east: 90.0, north: 22.8 }, note: "Cyclone-exposed mangrove delta" },
-  { id: "sindh", name: "Sindh, Pakistan", bbox: { west: 66.5, south: 24.0, east: 70.5, north: 28.5 }, note: "2022 flood region" },
-  { id: "sahel", name: "West African Sahel", bbox: { west: -5.0, south: 12.0, east: 10.0, north: 16.0 }, note: "Rainfall recovery and drought history" },
-  { id: "amazon", name: "Central Amazon", bbox: { west: -65.0, south: -8.0, east: -55.0, north: -2.0 }, note: "Rainforest, drought years 2005, 2010, 2023" },
-  { id: "california", name: "California Central Valley", bbox: { west: -122.5, south: 35.0, east: -119.0, north: 40.0 }, note: "Agriculture, drought, wildfire" },
+  { id: "north-china-plain", name: "North China Plain", bbox: { west: 113.0, south: 34.0, east: 119.0, north: 40.0 }, note: "Farmland, groundwater and haze" },
+  { id: "mekong-delta", name: "Mekong Delta", bbox: { west: 104.4, south: 8.6, east: 106.8, north: 11.0 }, note: "Rice bowl facing heat and salinity" },
   { id: "se-australia", name: "Southeast Australia", bbox: { west: 145.0, south: -38.0, east: 151.0, north: -32.0 }, note: "2019-20 Black Summer fires" },
+  // Polar
+  { id: "alaska-north-slope", name: "Alaska North Slope (Arctic)", bbox: { west: -162.0, south: 68.0, east: -142.0, north: 71.0 }, note: "Arctic warming several times faster than the globe" },
+  { id: "siberia", name: "Eastern Siberia (Yakutia)", bbox: { west: 120.0, south: 60.0, east: 135.0, north: 68.0 }, note: "Permafrost, record heat, wildfire" },
 ];
+
+export const DEFAULT_REGION_ID = "central-europe";
 
 export const regionById = (id: string) => REGIONS.find((r) => r.id === id);
 
@@ -236,12 +248,12 @@ export interface Starter {
 }
 
 export const STARTERS: Starter[] = [
-  { question: "Is northwest India drying out?", variable: "GWETROOT", region: "nw-india" },
-  { question: "Is the air over Delhi getting hazier?", variable: "AOD_55", region: "delhi-ncr" },
-  { question: "Are Delhi's afternoons getting hotter?", variable: "T2M_MAX", region: "delhi-ncr" },
-  { question: "Is the monsoon changing the same way everywhere in central India?", variable: "PRECTOTCORR", region: "india-monsoon" },
-  { question: "Is Kerala getting wetter?", variable: "PRECTOTCORR", region: "kerala" },
+  { question: "Is the Arctic warming faster than the rest of the world?", variable: "T2M", region: "alaska-north-slope" },
   { question: "Is the Sahel's rain coming back?", variable: "PRECTOTCORR", region: "sahel" },
+  { question: "Are European summers getting hotter?", variable: "T2M_MAX", region: "central-europe" },
+  { question: "Is the Amazon drying out?", variable: "GWETROOT", region: "amazon" },
+  { question: "Is the Horn of Africa losing its rain?", variable: "PRECTOTCORR", region: "east-africa" },
+  { question: "Is northwest India drying out?", variable: "GWETROOT", region: "nw-india" },
 ];
 
 export function bboxArea(b: BBox): number {

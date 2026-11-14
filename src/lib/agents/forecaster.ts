@@ -17,9 +17,16 @@ export async function runForecaster(ctx: CaseContext) {
     return;
   }
   const c = bboxCenter(plan.bbox);
-  await ctx.emit("forecaster", "tool", `Fetching daily NASA POWER records since 1991 at the centre of the region (${fmt(c.lat)}, ${fmt(c.lon)}).`);
   const params = [...new Set(defs.flatMap((d) => [d.param, d.antecedent]))];
-  const daily = await fetchDaily(c.lat, c.lon, params, 1991);
+  const { series: daily, urls } = await fetchDaily(c.lat, c.lon, params, 1991);
+  const a = ctx.source("forecaster", "power", `NASA POWER daily ${params.join(", ")} 1991-last year`, urls[0]);
+  const b = ctx.source("forecaster", "power", `NASA POWER daily ${params.join(", ")} this year`, urls[1]);
+  await ctx.emit(
+    "forecaster",
+    "tool",
+    `Pulled daily records at the centre of the region (${fmt(c.lat)}, ${fmt(c.lon)}): ${a} and ${b}.`,
+    { station: "power" },
+  );
   const today = new Date();
   const from = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
   const horizons: ForecastHorizon[] = [];
@@ -46,18 +53,19 @@ export async function runForecaster(ctx: CaseContext) {
     });
     const k = def.label.replace(/[^a-z0-9]+/gi, "_").toLowerCase();
     const ds = "NASA POWER daily (MERRA-2)";
+    const source = { label: "NASA POWER daily record", url: urls[0] };
     const method = `analog climatology over ${s.years} years; event: ${o.definition}`;
     ids.push(
-      ctx.ledger("forecaster", `p_${k}`, `${def.label}: chance in any year`, s.pAll, { display: pctS(s.pAll), dataset: ds, method }).id,
-      ctx.ledger("forecaster", `p_early_${k}`, `${def.label}: chance, 1991-2005`, s.pEarly, { display: pctS(s.pEarly), dataset: ds, method }).id,
-      ctx.ledger("forecaster", `p_recent_${k}`, `${def.label}: chance, 2010 onward`, s.pRecent, { display: pctS(s.pRecent), dataset: ds, method }).id,
+      ctx.ledger("forecaster", `p_${k}`, `${def.label}: chance in any year`, s.pAll, { display: pctS(s.pAll), dataset: ds, method, source }).id,
+      ctx.ledger("forecaster", `p_early_${k}`, `${def.label}: chance, 1991-2005`, s.pEarly, { display: pctS(s.pEarly), dataset: ds, method, source }).id,
+      ctx.ledger("forecaster", `p_recent_${k}`, `${def.label}: chance, 2010 onward`, s.pRecent, { display: pctS(s.pRecent), dataset: ds, method, source }).id,
     );
     if (s.pAnalog !== null)
-      ids.push(ctx.ledger("forecaster", `p_analog_${k}`, `${def.label}: chance given current conditions`, s.pAnalog, { display: pctS(s.pAnalog), dataset: ds, method: s.analogNote }).id);
+      ids.push(ctx.ledger("forecaster", `p_analog_${k}`, `${def.label}: chance given current conditions`, s.pAnalog, { display: pctS(s.pAnalog), dataset: ds, method: s.analogNote, source }).id);
     await ctx.emit(
       "forecaster",
       "ledger",
-      `${def.label}: ${pctS(s.pAll)} in a typical year; ${pctS(s.pEarly)} in 1991-2005 versus ${pctS(s.pRecent)} since 2010${
+      `${def.label} ([daily record](${urls[0]})): ${pctS(s.pAll)} in a typical year; ${pctS(s.pEarly)} in 1991-2005 versus ${pctS(s.pRecent)} since 2010${
         s.pAnalog !== null ? `; ${pctS(s.pAnalog)} in years that started like this one` : ""
       }.`,
       { ledgerIds: ids.slice(-4) },

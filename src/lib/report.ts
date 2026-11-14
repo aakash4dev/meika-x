@@ -40,18 +40,27 @@ export function caseMarkdown(rec: CaseRecord): string {
   const r = rec.results;
   const s = r.stats;
   const lines: string[] = [];
+  const src = (pred: (x: NonNullable<CaseRecord["sources"]>[number]) => boolean) => (rec.sources ?? []).find(pred);
+  const power = src((x) => x.station === "power" && x.agent === "statistician");
+  const powerCells = (rec.sources ?? []).filter((x) => x.station === "power" && x.agent === "statistician");
+  const daily = src((x) => x.agent === "forecaster");
+  const csv = `/api/cases/${rec.id}/data.csv`;
+  const L = (label: string, url?: string) => (url ? `[${label}](${url})` : label);
   lines.push(`# Case File: ${rec.question}`, "");
   lines.push(`*MEIKA-X, Team Zentox · ${new Date(rec.createdAt).toUTCString()} · case \`${rec.id}\`*`, "");
-  lines.push(`**Variable:** ${p.variableName} (${p.units}) · **Region:** ${p.regionName} · **Period:** ${p.startYear} to ${p.endYear} · **Data:** ${r.dataset}`, "");
+  lines.push(
+    `**Variable:** ${p.variableName} (${p.units}) · **Region:** ${p.regionName} · **Period:** ${p.startYear} to ${p.endYear} · **Data:** ${L(r.dataset ?? "NASA POWER", power?.url)}, averaged over ${powerCells.length} grid cells (${powerCells.map((c, i) => `[cell ${i + 1}](${c.url})`).join(", ")}) into the ${L("regional series CSV", csv)}`,
+    "",
+  );
   lines.push(`**Plan (${p.plannedBy}):** ${p.rationale}`, "");
   if (r.verdict) lines.push("## Verdict", "", `**Grade ${r.grade}.** ${r.verdict}`, "");
   if (rec.brief) {
     lines.push("## Brief", "", rec.brief.en, "");
     if (rec.brief.hi) lines.push("**हिन्दी:** " + rec.brief.hi, "");
-    lines.push(`*Written by ${rec.brief.provider === "template" ? "the fixed template" : `Claude (${rec.brief.provider})`}; number check ${rec.brief.checked ? "passed" : "failed"}.*`, "");
+    lines.push(`*Written by ${rec.brief.provider === "template" ? "the fixed template" : "our AI"} from ledger rows only; number check ${rec.brief.checked ? "passed" : "failed"}.*`, "");
   }
   if (s) {
-    lines.push("## Trend", "", "| Measure | Value |", "|---|---|");
+    lines.push("## Trend", "", `Computed from the ${L("regional monthly series", csv)} built from ${L("NASA POWER monthly data", power?.url)}.`, "", "| Measure | Value |", "|---|---|");
     lines.push(`| Trend per decade (OLS) | ${fmtSigned(s.slopeDecade)} ${p.units} |`);
     lines.push(`| 95% interval | ${fmt(s.ciDecade[0])} to ${fmt(s.ciDecade[1])} |`);
     lines.push(`| Bootstrap 95% interval | ${fmt(s.bootCiDecade[0])} to ${fmt(s.bootCiDecade[1])} |`);
@@ -69,9 +78,14 @@ export function caseMarkdown(rec: CaseRecord): string {
     for (const t of r.skeptic) lines.push(`| ${t.name} | ${t.status.toUpperCase()} | ${esc(t.detail)} |`);
     lines.push("");
   }
-  if (r.map) lines.push("## Opposite-story map", "", `${r.map.cells.length} cells tested: ${r.map.sigPos} significant rises, ${r.map.sigNeg} significant falls (FDR 5%). Flag ${r.map.opposite ? "**raised**" : "not raised"}.`, "");
+  if (r.map) {
+    lines.push("## Where it changes", "", `${r.map.cells.length} cells tested: ${r.map.sigPos} significant rises, ${r.map.sigNeg} significant falls (FDR 5%). Opposite-story flag ${r.map.opposite ? "**raised**" : "not raised"}.`, "");
+    lines.push("| Cell | Trend per decade | q-value | Significant | Data |", "|---|---|---|---|---|");
+    r.map.cells.forEach((c, i) => lines.push(`| ${c.lat.toFixed(2)}N ${c.lon.toFixed(2)}E | ${fmtSigned(c.slopeDecade)} | ${fmtP(c.q)} | ${c.sig ? "yes" : "no"} | ${L("NASA POWER", powerCells[i]?.url)} |`));
+    lines.push("");
+  }
   if (r.drivers?.length) {
-    lines.push("## Drivers (association, not cause)", "", "| Driver | r | Lag (months) | p | Granger p |", "|---|---|---|---|---|");
+    lines.push("## Drivers (association, not cause)", "", `Each driver series comes from the same ${L("NASA POWER grid", power?.url)}.`, "", "| Driver | r | Lag (months) | p | Granger p |", "|---|---|---|---|---|");
     for (const d of r.drivers) lines.push(`| ${d.name} | ${fmt(d.r, 2)} | ${d.lag} | ${fmtP(d.p)} | ${fmtP(d.grangerP)} |`);
     lines.push("");
   }
@@ -79,11 +93,12 @@ export function caseMarkdown(rec: CaseRecord): string {
     lines.push("## Hazard odds (analog climatology)", "", "| Hazard | Typical year | 1991-2005 | 2010 onward | Given current conditions |", "|---|---|---|---|---|");
     for (const h of r.forecast.horizons)
       lines.push(`| ${h.label} | ${fmt(h.pAll * 100, 2)}% | ${fmt(h.pEarly * 100, 2)}% | ${fmt(h.pRecent * 100, 2)}% | ${h.pAnalog !== null ? `${fmt(h.pAnalog * 100, 2)}%` : "n/a"} |`);
-    lines.push("", `*${r.forecast.note} Data through ${r.forecast.dataThrough}.*`, "");
+    lines.push("", `*${r.forecast.note} From the ${L("NASA POWER daily record", daily?.url)}, data through ${r.forecast.dataThrough}.*`, "");
   }
   if (r.witness) {
-    lines.push("## Satellite Witness", "", `MODIS true colour from NASA GIBS: ${r.witness.recentDate} and ${r.witness.priorDate}.`);
-    if (r.witness.note) lines.push("", `*AI visual note (${r.witness.note.provider}):* ${r.witness.note.text}`);
+    const shot = (d: string) => src((x) => x.station === "gibs" && x.label.endsWith(d))?.url;
+    lines.push("## Satellite Witness", "", `MODIS Terra true colour from NASA GIBS: ${L(r.witness.recentDate, shot(r.witness.recentDate))} and ${L(r.witness.priorDate, shot(r.witness.priorDate))}. Events from ${L("NASA EONET", src((x) => x.station === "eonet")?.url)}.`);
+    if (r.witness.note) lines.push("", `*Visual note by our AI (an observation, not a measurement):* ${r.witness.note.text}`);
     if (r.witness.events.length) {
       lines.push("", "EONET events in the last year:");
       for (const e of r.witness.events.slice(0, 10)) lines.push(`- ${e.date} · ${e.category} · [${esc(e.title)}](${e.link})`);
@@ -91,14 +106,15 @@ export function caseMarkdown(rec: CaseRecord): string {
     lines.push("");
   }
   if (r.exposure) lines.push("## Exposure", "", `Area about ${fmt(r.exposure.areaKm2, 3)} km2. ${r.exposure.note}`, "");
-  lines.push("## Evidence ledger", "", "| ID | Agent | Measure | Value | Method | Dataset |", "|---|---|---|---|---|---|");
-  for (const l of rec.ledger) lines.push(`| ${l.id} | ${l.agent} | ${esc(l.label)} | ${esc(l.display)}${l.unit ? ` ${l.unit}` : ""} | ${esc(l.method)} | ${esc(l.dataset)} |`);
+  lines.push("## Evidence ledger", "", "| ID | Agent | Measure | Value | Method | Data |", "|---|---|---|---|---|---|");
+  for (const l of rec.ledger)
+    lines.push(`| ${l.id} | ${l.agent} | ${esc(l.label)} | ${esc(l.display)}${l.unit ? ` ${l.unit}` : ""} | ${esc(l.method)} | ${l.source ? L(esc(l.source.label), l.source.url) : esc(l.dataset)} |`);
   lines.push("");
   if (r.related?.length) {
     lines.push("## Full-resolution NASA products (from CMR)", "");
     for (const c of r.related) lines.push(`- [${c.shortName}](${c.link}) v${c.version}: ${esc(c.title)}`);
     lines.push("");
   }
-  lines.push("---", "", "Advisory analysis for education, not an official warning. Numbers come from deterministic code; AI is used only for planning, the visual note and the narrated brief, as marked above.");
+  lines.push("---", "", "Advisory analysis for education, not an official warning. Numbers come from deterministic code; our AI is used only for planning, the visual note and the narrated brief, as marked above.");
   return lines.join("\n");
 }

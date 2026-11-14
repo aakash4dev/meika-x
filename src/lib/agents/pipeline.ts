@@ -23,6 +23,7 @@ export function createCase(req: CaseRequest): CaseContext {
     question: req.question.trim().slice(0, 300) || "What is changing here?",
     transcript: [],
     ledger: [],
+    sources: [],
     results: {},
   };
   return new CaseContext(rec);

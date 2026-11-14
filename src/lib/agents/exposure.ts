@@ -1,7 +1,7 @@
 // Exposure: what sits in the path. Area, active natural events, fire detections, share of area with a significant trend.
 import { bboxArea } from "../catalog";
-import { fetchEvents } from "../nasa/eonet";
-import { fireCount, firmsEnabled } from "../nasa/firms";
+import { eventsUrl, fetchEvents } from "../nasa/eonet";
+import { fireCount, firmsEnabled, firmsMapUrl } from "../nasa/firms";
 import { fmt } from "../format";
 import type { CaseContext } from "./runtime";
 import type { ExposureResult } from "./types";
@@ -25,8 +25,12 @@ export async function runExposure(ctx: CaseContext) {
       }).id,
     );
   }
+  let evLink = "";
+  let fireLink = "";
   try {
-    const ev = await fetchEvents({ bbox: plan.bbox, days: 30, status: "all", limit: 100 });
+    const q = { bbox: plan.bbox, days: 30, status: "all" as const, limit: 100 };
+    const ev = await fetchEvents(q);
+    evLink = ctx.source("exposure", "eonet", "NASA EONET events in the region, last 30 days", eventsUrl(q));
     const byCat = new Map<string, number>();
     for (const e of ev) byCat.set(e.category, (byCat.get(e.category) ?? 0) + 1);
     result.events = [...byCat.entries()].map(([category, count]) => ({ category, count }));
@@ -35,6 +39,7 @@ export async function runExposure(ctx: CaseContext) {
         display: String(ev.length),
         dataset: "NASA EONET v3",
         method: "events inside the region box",
+        source: { label: "NASA EONET query", url: eventsUrl(q) },
       }).id,
     );
   } catch {
@@ -42,14 +47,16 @@ export async function runExposure(ctx: CaseContext) {
   }
   if (firmsEnabled()) {
     try {
-      const f = await fireCount(plan.bbox, 7);
+      const f = await fireCount(plan.bbox, 5);
+      fireLink = ctx.source("exposure", "firms", "NASA FIRMS fire map of the region, last 5 days", firmsMapUrl(plan.bbox, 5));
       if (f) {
         result.fires = { count: f.count, highConfidence: f.highConfidence, days: f.days };
         ids.push(
-          ctx.ledger("exposure", "fires_7d", "VIIRS fire detections, last 7 days", f.count, {
+          ctx.ledger("exposure", "fires_5d", "VIIRS fire detections, last 5 days", f.count, {
             display: String(f.count),
             dataset: `NASA FIRMS ${f.source}`,
             method: "active-fire detections inside the region box",
+            source: { label: "NASA FIRMS fire map", url: firmsMapUrl(plan.bbox, 5) },
           }).id,
         );
       }
@@ -63,8 +70,10 @@ export async function runExposure(ctx: CaseContext) {
     "exposure",
     "ledger",
     `The region covers about ${fmt(area, 3)} km2${result.sigAreaShare !== null ? `, and ${fmt(result.sigAreaShare * 100, 2)}% of its grid cells show a significant trend` : ""}. ${
-      result.events.length ? `Recent EONET events: ${result.events.map((e) => `${e.count} ${e.category}`).join(", ")}.` : "No EONET events in the last 30 days."
-    }${result.fires ? ` FIRMS saw ${result.fires.count} fire detections in 7 days.` : ""}`,
-    { ledgerIds: ids },
+      result.events.length
+        ? `Recent events (${evLink}): ${result.events.map((e) => `${e.count} ${e.category}`).join(", ")}.`
+        : `No events in the last 30 days (${evLink || "NASA EONET"}).`
+    }${result.fires ? ` ${fireLink} shows ${result.fires.count} VIIRS fire detections in 5 days.` : ""}`,
+    { ledgerIds: ids, station: result.fires ? "firms" : "eonet" },
   );
 }

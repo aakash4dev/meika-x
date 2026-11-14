@@ -16,6 +16,8 @@ export interface CheckResult {
   level: Level;
   value: string;
   detail: string;
+  /** The exact public data query behind this check. */
+  link?: { label: string; url: string };
 }
 
 export interface WatchItem {

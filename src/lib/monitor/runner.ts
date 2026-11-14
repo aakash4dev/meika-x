@@ -16,7 +16,7 @@ const g = globalThis as G;
 
 function seedWatchlist(): WatchItem[] {
   const now = new Date().toISOString();
-  return ["delhi-ncr", "kerala", "nw-india"].map((id) => {
+  return ["delhi-ncr", "california", "se-australia", "central-europe", "east-africa"].map((id) => {
     const r = regionById(id)!;
     return { id: newId("watch"), name: r.name, regionId: id, bbox: r.bbox, rules: structuredClone(DEFAULT_RULES), telegram: true, createdAt: now };
   });
@@ -125,6 +125,7 @@ export async function runMonitor(trigger: string) {
             rule: c.rule,
             level: c.level,
             message: `${RULE_NAME[c.rule]}: ${c.value}. ${c.detail}`,
+            link: c.link?.url,
             createdAt: started.toISOString(),
             key,
             telegram: "off",
@@ -137,7 +138,7 @@ export async function runMonitor(trigger: string) {
       item.lastChecks = checks;
       sections.push(
         `### ${item.name}\n\n| Check | Level | Value | Detail |\n|---|---|---|---|\n` +
-          checks.map((c) => `| ${RULE_NAME[c.rule]} | ${c.level.toUpperCase()} | ${c.value} | ${c.detail.replace(/\|/g, "/")} |`).join("\n"),
+          checks.map((c) => `| ${RULE_NAME[c.rule]} | ${c.level.toUpperCase()} | ${c.value} | ${c.detail.replace(/\|/g, "/")}${c.link ? ` ([${c.link.label}](${c.link.url}))` : ""} |`).join("\n"),
       );
     }
 
@@ -172,7 +173,7 @@ export async function runMonitor(trigger: string) {
           `MEIKA-X alert: ${items[0].itemName}\n` +
           items.map((a) => `${ICON[a.rule] ?? "•"} ${a.level.toUpperCase()} ${a.message}${a.link ? `\n${a.link}` : ""}`).join("\n") +
           (digest ? `\n\nAI summary: ${digest}` : "") +
-          "\n\nAdvisory only. Check official warnings (IMD, NDMA or your national service).";
+          "\n\nAdvisory only. Check official warnings from your national weather service.";
         const res = await sendTelegram(text);
         items.forEach((a) => (a.telegram = res.ok ? "sent" : "failed"));
       }
@@ -193,9 +194,9 @@ export async function runMonitor(trigger: string) {
     const md =
       `# Monitoring report, ${started.toUTCString()}\n\n*Trigger: ${trigger} · ${list.length} watched regions · ${newAlerts.length} new alerts*\n\n` +
       (newAlerts.length
-        ? `## New alerts\n\n${newAlerts.map((a) => `- **${a.itemName}** · ${RULE_NAME[a.rule]} · ${a.level.toUpperCase()}: ${a.message} (Telegram: ${a.telegram})`).join("\n")}\n\n`
+        ? `## New alerts\n\n${newAlerts.map((a) => `- **${a.itemName}** · ${RULE_NAME[a.rule]} · ${a.level.toUpperCase()}: ${a.message}${a.link ? ` ([data](${a.link}))` : ""} (Telegram: ${a.telegram})`).join("\n")}\n\n`
         : "## New alerts\n\nNone.\n\n") +
-      (digest ? `**AI summary (Claude):** ${digest}\n\n` : "") +
+      (digest ? `**AI summary (our AI):** ${digest}\n\n` : "") +
       `## Checks\n\n${sections.join("\n\n")}\n\n---\n\nData: NASA POWER daily (MERRA-2), NASA EONET v3${process.env.FIRMS_MAP_KEY ? ", NASA FIRMS VIIRS" : ""}. Thresholds compare against 1991-2020 for the same calendar dates. Advisory only.`;
     const rep = await saveReport({
       kind: "monitor",

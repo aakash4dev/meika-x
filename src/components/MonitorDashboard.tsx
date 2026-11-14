@@ -183,7 +183,7 @@ export default function MonitorDashboard() {
                         <tr key={c.rule} title={c.detail}>
                           <td style={{ width: 110 }}>{RULE_LABEL[c.rule]}</td>
                           <td><span className={`pill ${c.level === "n/a" ? "na" : c.level}`}>{c.level}</span></td>
-                          <td className="small">{c.value}<div className="tiny muted">{c.detail}</div></td>
+                          <td className="small">{c.value}<div className="tiny muted">{c.detail}{c.link ? <> · <a href={c.link.url} target="_blank" rel="noreferrer">{c.link.label}</a></> : null}</div></td>
                         </tr>
                       ))}
                     </tbody>
@@ -246,7 +246,7 @@ export default function MonitorDashboard() {
           )}
           <p className="small muted" style={{ marginTop: 12 }}>
             Every run writes a report: see <Link href="/reports">Reports</Link>. Thresholds compare the latest NASA POWER daily data with the same calendar dates in
-            1991-2020. Monitoring is plain software; Claude only writes an optional summary of new alerts.
+            1991-2020. Monitoring is plain software; our AI only writes an optional summary of new alerts.
           </p>
         </div>
       </div>

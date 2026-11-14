@@ -47,13 +47,25 @@ function centroid(g: RawEvent["geometry"][number]): [number, number] | null {
   return null;
 }
 
-export async function fetchEvents(opts: { bbox?: BBox; days?: number; status?: "open" | "closed" | "all"; limit?: number } = {}) {
+export interface EventQuery {
+  bbox?: BBox;
+  days?: number;
+  status?: "open" | "closed" | "all";
+  limit?: number;
+}
+
+/** The exact EONET query URL (public, viewable in a browser). */
+export function eventsUrl(opts: EventQuery = {}) {
   const q = new URLSearchParams();
   q.set("status", opts.status ?? "open");
   if (opts.days) q.set("days", String(opts.days));
   q.set("limit", String(opts.limit ?? 300));
   if (opts.bbox) q.set("bbox", `${opts.bbox.west},${opts.bbox.north},${opts.bbox.east},${opts.bbox.south}`);
-  const url = `https://eonet.gsfc.nasa.gov/api/v3/events?${q.toString()}`;
+  return `https://eonet.gsfc.nasa.gov/api/v3/events?${q.toString()}`;
+}
+
+export async function fetchEvents(opts: EventQuery = {}) {
+  const url = eventsUrl(opts);
   const data = await cachedJSON<{ events: RawEvent[] }>(url, { ttlSeconds: 20 * 60, timeoutMs: 45000 });
   const out: EonetEvent[] = [];
   for (const e of data.events ?? []) {

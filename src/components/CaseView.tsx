@@ -4,62 +4,44 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AGENTS, agentById, type AgentId } from "@/lib/agents/meta";
-import type { CaseRecord, TranscriptEvent } from "@/lib/agents/types";
+import type { CaseRecord, Station, TranscriptEvent } from "@/lib/agents/types";
 import { bboxCenter } from "@/lib/catalog";
 import { fmt, fmtP, fmtSigned } from "@/lib/format";
-import SeriesChart from "./SeriesChart";
+import { STATIONS, stationById } from "@/lib/stations";
 import OppositeMap from "./OppositeMap";
+import RichText from "./RichText";
+import SeriesChart from "./SeriesChart";
 
 const AgentRoom = dynamic(() => import("./AgentRoom"), {
   ssr: false,
   loading: () => (
     <div style={{ display: "grid", placeItems: "center", height: "100%" }} className="muted">
       <span>
-        <span className="spinner" /> Building the room...
+        <span className="spinner" /> Opening the lab...
       </span>
     </div>
   ),
 });
 
-const KIND_LABEL: Record<string, string> = { plan: "plan", say: "", tool: "tool", ledger: "ledger", handoff: "hand-off", verdict: "verdict", warn: "warning", done: "done" };
+const KIND_TAG: Partial<Record<TranscriptEvent["kind"], string>> = { plan: "plan", tool: "data", ledger: "ledger", handoff: "hand-off", verdict: "verdict", warn: "warning", done: "done" };
+const engineLabel = (e: string) => (e === "code" ? "deterministic code" : e === "ai" ? "our AI" : "code + our AI");
 
-function Transcript({ events }: { events: TranscriptEvent[] }) {
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    ref.current?.scrollTo({ top: ref.current.scrollHeight, behavior: "smooth" });
-  }, [events.length]);
-  return (
-    <div className="transcript" ref={ref}>
-      {events.map((e) => {
-        const a = agentById(e.agent);
-        return (
-          <div key={e.seq} className={`tevent ${e.kind}`}>
-            <span className="dot" style={{ background: a.color }} />
-            <div>
-              <span className="who" style={{ color: a.color }}>
-                {a.name}
-              </span>
-              {KIND_LABEL[e.kind] && <span className="kind">{KIND_LABEL[e.kind]}</span>}
-              {e.ledgerIds?.length ? <span className="kind">rows {e.ledgerIds[0]}{e.ledgerIds.length > 1 ? `-${e.ledgerIds.at(-1)}` : ""}</span> : null}
-              <div>{e.text}</div>
-            </div>
-          </div>
-        );
-      })}
-      {events.length === 0 && <div className="muted small">Waiting for the Chief Detective...</div>}
-    </div>
-  );
-}
+/** How long each step stays on stage, so walks to the terminals are visible. */
+const stepDelay = (e?: TranscriptEvent) => (!e ? 600 : e.station ? 2600 : e.kind === "verdict" ? 2000 : e.kind === "handoff" ? 900 : 1200);
 
 export default function CaseView({ id }: { id: string }) {
   const [rec, setRec] = useState<CaseRecord | null>(null);
   const [error, setError] = useState("");
-  const [selected, setSelected] = useState<AgentId | undefined>();
-  const [lang, setLang] = useState<"en" | "hi">("en");
-  const [showLedger, setShowLedger] = useState(false);
-  // playback: reveal events one by one so the room animation is watchable even for a cached, finished case
   const [shown, setShown] = useState(0);
+  const [selected, setSelected] = useState<AgentId | undefined>();
+  const [station, setStation] = useState<Station | null>(null);
+  const [near, setNear] = useState<Station | null>(null);
+  const [walk, setWalk] = useState(false);
+  const [drawer, setDrawer] = useState(false);
+  const [lang, setLang] = useState<"en" | "hi">("en");
+  const feedRef = useRef<HTMLDivElement>(null);
 
+  // poll the case while it runs
   useEffect(() => {
     let stop = false;
     let timer: ReturnType<typeof setTimeout>;
@@ -82,23 +64,37 @@ export default function CaseView({ id }: { id: string }) {
     };
   }, [id]);
 
+  // reveal transcript events one at a time
   const total = rec?.transcript.length ?? 0;
   useEffect(() => {
     if (shown >= total) return;
-    const lag = total - shown;
-    const t = setTimeout(() => setShown((s) => Math.min(total, s + (lag > 25 ? 3 : 1))), lag > 25 ? 60 : 420);
+    const t = setTimeout(() => setShown((s) => Math.min(total, s + 1)), stepDelay(rec?.transcript[shown - 1]));
     return () => clearTimeout(t);
-  }, [shown, total]);
+  }, [shown, total, rec]);
 
   const events = useMemo(() => rec?.transcript.slice(0, shown) ?? [], [rec, shown]);
   const playing = rec?.status === "running" || shown < total;
   const current = events.at(-1);
+
+  useEffect(() => {
+    feedRef.current?.scrollTo({ top: feedRef.current.scrollHeight, behavior: "smooth" });
+  }, [events.length]);
+
   const messages = useMemo(() => {
     const m: Partial<Record<AgentId, string>> = {};
     for (const e of events) m[e.agent] = e.text;
     return m;
   }, [events]);
   const spoken = useMemo(() => [...new Set(events.map((e) => e.agent))], [events]);
+  // an agent walks to a terminal for a data step, and stays there for the next step or so
+  const targets = useMemo(() => {
+    const t: Partial<Record<AgentId, Station>> = {};
+    if (!playing) return t;
+    const recent = events.slice(-2);
+    for (const e of recent) if (e.station) t[e.agent] = e.station;
+    return t;
+  }, [events, playing]);
+  const activeStations = useMemo(() => [...new Set(Object.values(targets))] as Station[], [targets]);
 
   if (error) return <div className="container"><div className="empty">{error}. <Link href="/">Back to cases</Link></div></div>;
   if (!rec) return <div className="container"><div className="empty"><span className="spinner" /> Loading case...</div></div>;
@@ -106,171 +102,323 @@ export default function CaseView({ id }: { id: string }) {
   const r = rec.results;
   const plan = rec.plan;
   const done = rec.status !== "running" && !playing;
+  const s = r.stats;
+  const h = r.forecast?.horizons[0];
   const sel = selected ? agentById(selected) : undefined;
-  const selRows = selected ? rec.ledger.filter((l) => l.agent === selected) : [];
+  const stationSources = (st: Station) =>
+    (rec.sources ?? []).filter((x) => x.station === st && (!current || x.at <= current.ts || done));
 
   return (
-    <main className="container">
-      <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14 }}>
-        <div style={{ flex: 1, minWidth: 280 }}>
-          <div className="eyebrow">Case {rec.id}</div>
-          <h1 style={{ fontSize: "1.7rem", marginBottom: 4 }}>{rec.question}</h1>
-          <div className="small muted">
-            {plan ? (
-              <>
-                {plan.variableName} ({plan.units}) · {plan.regionName} · {plan.startYear} to {plan.endYear} · planned by {plan.plannedBy}
-              </>
-            ) : (
-              "Planning..."
-            )}
-          </div>
-        </div>
-        <div className="row">
-          <span className={`pill ${playing ? "running" : rec.status}`}>{playing ? "in session" : rec.status}</span>
-          {done && r.grade && <span className={`grade ${r.grade}`}>{r.grade}</span>}
-          {rec.reportId && done && (
-            <>
-              <Link className="btn" href={`/reports/${rec.reportId}`}>Report</Link>
-              <a className="btn" href={`/api/reports/${rec.reportId}?format=md`}>Download .md</a>
-            </>
-          )}
-          {done && shown > 0 && (
-            <button className="btn" onClick={() => setShown(0)} title="Replay the agent session">
-              Replay
-            </button>
-          )}
-        </div>
+    <div className="cc">
+      <div className="cc-room">
+        <AgentRoom
+          activeAgent={playing ? current?.agent : undefined}
+          messages={messages}
+          spoken={spoken}
+          selected={selected}
+          onSelect={(a) => {
+            setStation(null);
+            setSelected(a === selected ? undefined : a);
+          }}
+          regionCenter={plan ? bboxCenter(plan.bbox) : undefined}
+          running={playing}
+          targets={targets}
+          activeStations={activeStations}
+          onStation={(st) => {
+            setSelected(undefined);
+            setStation(st);
+          }}
+          walk={walk}
+          onWalkChange={setWalk}
+          onNearStation={setNear}
+        />
       </div>
 
-      <div className="grid" style={{ gridTemplateColumns: "minmax(0, 1.65fr) minmax(0, 1fr)" }}>
-        <div className="room-wrap">
-          <div className="room-hud">Agent room · drag to orbit · click a scientist</div>
-          <AgentRoom
-            activeAgent={playing ? current?.agent : undefined}
-            messages={messages}
-            spoken={spoken}
-            selected={selected}
-            onSelect={(a) => setSelected(a === selected ? undefined : a)}
-            regionCenter={plan ? bboxCenter(plan.bbox) : undefined}
-            running={playing}
-          />
-        </div>
-        <div className="card" style={{ padding: 12 }}>
-          <div className="eyebrow" style={{ paddingLeft: 4 }}>Case transcript</div>
-          <Transcript events={events} />
-        </div>
-      </div>
-
-      {sel && (
-        <div className="card" style={{ marginTop: 16, borderColor: sel.color }}>
-          <div className="row" style={{ justifyContent: "space-between" }}>
-            <h2 style={{ color: sel.color, margin: 0 }}>{sel.name}</h2>
-            <span className={`pill ${sel.engine}`}>{sel.engine === "code" ? "deterministic code" : sel.engine === "ai" ? "Claude" : "code + Claude"}</span>
+      {!walk && (
+        <header className="cc-title glass">
+          <div className="cc-kicker">
+            Case {rec.id.slice(-6)} · {playing ? "in session" : rec.status === "error" ? "stopped" : "closed"}
           </div>
-          <p style={{ marginTop: 8 }}>{sel.job}</p>
-          <p className="small muted">
-            <b>Tools:</b> {sel.tools} · <b>Output:</b> {sel.output}
-            {sel.aiRole ? <> · <b>AI role:</b> {sel.aiRole}</> : null}
-          </p>
-          {selRows.length > 0 && (
-            <table>
-              <thead>
-                <tr><th>Row</th><th>Measure</th><th>Value</th><th>Method</th></tr>
-              </thead>
-              <tbody>
-                {selRows.map((l) => (
-                  <tr key={l.id}>
-                    <td className="num">{l.id}</td>
-                    <td>{l.label}</td>
-                    <td className="num">{l.display}{l.unit ? ` ${l.unit}` : ""}</td>
-                    <td className="small muted">{l.method}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <h1>{rec.question}</h1>
+          {plan && (
+            <div className="cc-chips">
+              <span>{plan.variableName}</span>
+              <span>{plan.regionName}</span>
+              <span>
+                {plan.startYear}–{plan.endYear}
+              </span>
+              <span>{r.dataset ?? "NASA POWER"}</span>
+            </div>
           )}
-        </div>
+        </header>
       )}
 
-      {rec.status === "error" && <div className="card" style={{ marginTop: 16, borderColor: "var(--alert)" }}>Case stopped: {rec.error}</div>}
+      <div className="cc-modes">
+        <button className={`btn ${!walk ? "on" : ""}`} onClick={() => setWalk(false)}>
+          ◎ Orbit view
+        </button>
+        <button
+          className={`btn ${walk ? "on" : ""}`}
+          onClick={() => {
+            setStation(null);
+            setSelected(undefined);
+            setWalk(true);
+          }}
+        >
+          ⌖ Walk the lab
+        </button>
+        {done && shown > 0 && (
+          <button className="btn" onClick={() => setShown(0)}>
+            ↺ Replay session
+          </button>
+        )}
+        {playing && rec.status !== "running" && (
+          <button className="btn" onClick={() => setShown(total)}>
+            ⏭ Skip to verdict
+          </button>
+        )}
+      </div>
 
-      {done && r.stats && plan && (
+      {walk && (
         <>
-          <div className="grid g2" style={{ marginTop: 16 }}>
-            <div className="card">
-              <div className="eyebrow">Verdict</div>
-              <div className="row" style={{ alignItems: "flex-start", flexWrap: "nowrap" }}>
-                {r.grade && <span className={`grade ${r.grade}`}>{r.grade}</span>}
-                <p style={{ margin: 0 }}>{r.verdict}</p>
-              </div>
-              <table style={{ marginTop: 12 }}>
-                <tbody>
-                  <tr><td>Trend per decade (OLS)</td><td className="num">{fmtSigned(r.stats.slopeDecade)} {plan.units}</td></tr>
-                  <tr><td>95% interval</td><td className="num">{fmt(r.stats.ciDecade[0])} to {fmt(r.stats.ciDecade[1])}</td></tr>
-                  <tr><td>t-test p (adjusted)</td><td className="num">{fmtP(r.stats.pOls)}</td></tr>
-                  <tr><td>Mann-Kendall p (Hamed-Rao)</td><td className="num">{fmtP(r.stats.pMk)}</td></tr>
-                  <tr><td>Sen&apos;s slope per decade</td><td className="num">{fmtSigned(r.stats.senDecade)}</td></tr>
-                  {r.stats.pctDecade !== null && <tr><td>% of baseline per decade</td><td className="num">{fmtSigned(r.stats.pctDecade, 2)}%</td></tr>}
-                  <tr><td>Years of record needed</td><td className="num">{fmt(r.stats.yearsNeeded, 2)}</td></tr>
-                  {r.stats.emergenceYear && <tr><td>Emerged from noise</td><td className="num">{r.stats.emergenceYear}</td></tr>}
-                </tbody>
-              </table>
-            </div>
-            <div className="card">
-              <div className="row" style={{ justifyContent: "space-between" }}>
-                <div className="eyebrow">Narrator&apos;s brief</div>
-                <div className="tabs">
-                  <button className={`tab ${lang === "en" ? "on" : ""}`} onClick={() => setLang("en")}>English</button>
-                  <button className={`tab ${lang === "hi" ? "on" : ""}`} onClick={() => setLang("hi")}>हिन्दी</button>
+          <div className="cc-cross" />
+          <div className="cc-hint glass">
+            {near ? (
+              <>
+                Press <b>E</b> to open the {stationById(near).name} terminal
+              </>
+            ) : (
+              <>
+                Click to look · <b>W A S D</b> move · <b>Shift</b> run · <b>E</b> open a terminal · <b>Esc</b> free the mouse · <b>Q</b> leave
+              </>
+            )}
+          </div>
+        </>
+      )}
+
+      {station && (
+        <aside className="panel-over cc-station glass">
+          <button className="close-x" onClick={() => setStation(null)} aria-label="Close">
+            ×
+          </button>
+          <div className="eyebrow" style={{ color: stationById(station).color }}>
+            Data terminal
+          </div>
+          <h2 style={{ marginBottom: 4 }}>{stationById(station).name}</h2>
+          <p className="small muted">
+            {stationById(station).about}{" "}
+            <a href={stationById(station).home} target="_blank" rel="noreferrer">
+              About this source
+            </a>
+          </p>
+          <div className="eyebrow" style={{ marginTop: 10 }}>
+            Queries made in this case
+          </div>
+          {stationSources(station).length ? (
+            <ul className="srclist rt">
+              {stationSources(station).map((x, i) => (
+                <li key={i}>
+                  <span>{agentById(x.agent).name}</span>
+                  <a href={x.url} target="_blank" rel="noreferrer">
+                    {x.label}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="small muted">No agent has used this terminal in this case{playing ? " yet" : ""}.</p>
+          )}
+        </aside>
+      )}
+
+      {sel && !station && (
+        <aside className="panel-over cc-dossier glass" style={{ borderColor: sel.color }}>
+          <button className="close-x" onClick={() => setSelected(undefined)} aria-label="Close">
+            ×
+          </button>
+          <div className="eyebrow" style={{ color: sel.color }}>
+            Agent dossier · {engineLabel(sel.engine)}
+          </div>
+          <h2>{sel.name}</h2>
+          <p className="small">{sel.job}</p>
+          <p className="tiny muted">
+            Tools: {sel.tools}. Output: {sel.output}.
+          </p>
+          <div className="eyebrow" style={{ marginTop: 10 }}>
+            What {sel.name} said
+          </div>
+          <div className="small">
+            {events
+              .filter((e) => e.agent === sel.id)
+              .map((e) => (
+                <p key={e.seq} style={{ margin: "0 0 8px" }}>
+                  <RichText text={e.text} />
+                </p>
+              ))}
+          </div>
+        </aside>
+      )}
+
+      <section className="cc-feed glass">
+        <div className="cc-feedhead">
+          <b>Comms</b>
+          <span>
+            {events.length} messages · {rec.ledger.length} ledger rows · {(rec.sources ?? []).length} data queries
+          </span>
+        </div>
+        <div className="cc-feedbody" ref={feedRef}>
+          {events.map((e) => {
+            const a = agentById(e.agent);
+            return (
+              <div key={e.seq} className={`cc-msg ${e.kind}`}>
+                <i style={{ background: a.color }} />
+                <div>
+                  <span className="who" style={{ color: a.color }}>
+                    {a.name}
+                  </span>
+                  {KIND_TAG[e.kind] && <span className="tag">{KIND_TAG[e.kind]}</span>}
+                  {e.station && <span className="tag">@ {stationById(e.station).name}</span>}
+                  <div className="txt">
+                    <RichText text={e.text} />
+                  </div>
                 </div>
               </div>
-              <p className="brief">{rec.brief ? (lang === "hi" ? rec.brief.hi ?? rec.brief.en : rec.brief.en) : "..."}</p>
-              {rec.brief && (
-                <p className="tiny muted">
-                  Written by {rec.brief.provider === "template" ? "the fixed template" : `Claude (${rec.brief.provider === "cli" ? "local Claude Code" : "Anthropic API"})`} · number check{" "}
-                  {rec.brief.checked ? "passed: every number matches a ledger row" : "failed"}
-                </p>
-              )}
+            );
+          })}
+          {events.length === 0 && <div className="muted small" style={{ padding: 10 }}>The Chief Detective is opening the case...</div>}
+        </div>
+      </section>
+
+      <footer className="cc-dock glass">
+        {done && s && plan ? (
+          <>
+            <div className={`grade ${r.grade}`}>
+              <small>Grade</small>
+              {r.grade}
             </div>
+            <div className="kpi">
+              <small>Trend / decade</small>
+              <b>{fmtSigned(s.slopeDecade)}</b>
+              <em>{plan.units}</em>
+            </div>
+            <div className="kpi">
+              <small>95% interval</small>
+              <b>
+                {fmt(s.ciDecade[0])} … {fmt(s.ciDecade[1])}
+              </b>
+            </div>
+            <div className="kpi">
+              <small>t-test p</small>
+              <b>{fmtP(s.pOls)}</b>
+            </div>
+            <div className="kpi">
+              <small>Mann-Kendall p</small>
+              <b>{fmtP(s.pMk)}</b>
+            </div>
+            <div className="kpi">
+              <small>Where</small>
+              <b>{r.map?.opposite ? "Split" : `${r.map?.sigPos ?? 0}▲ ${r.map?.sigNeg ?? 0}▼`}</b>
+            </div>
+            {h && (
+              <div className="kpi">
+                <small>{h.label}</small>
+                <b>{fmt(h.pAll * 100, 2)}%</b>
+              </div>
+            )}
+            <div className="actions">
+              {rec.reportId && (
+                <a className="btn ghost" href={`/api/reports/${rec.reportId}?format=md`}>
+                  .md
+                </a>
+              )}
+              <button className="btn primary" onClick={() => setDrawer(true)}>
+                Open Case File ↗
+              </button>
+            </div>
+          </>
+        ) : (
+          <div className="waiting">
+            {rec.status === "error" ? (
+              <>Case stopped: {rec.error}</>
+            ) : (
+              <>
+                <span className="spinner" /> The agents are investigating. Results appear here once the Skeptic has graded them.
+              </>
+            )}
           </div>
+        )}
+      </footer>
+
+      {drawer && plan && s && (
+        <aside className="panel-over cc-drawer">
+          <button className="close-x" onClick={() => setDrawer(false)} aria-label="Close">
+            ×
+          </button>
+          <div className="eyebrow">Case File · {rec.id}</div>
+          <h1 style={{ fontSize: 26 }}>{rec.question}</h1>
+
+          <section>
+            <div className="row" style={{ alignItems: "flex-start", flexWrap: "nowrap" }}>
+              <span className={`grade ${r.grade}`}>{r.grade}</span>
+              <p style={{ margin: 0 }}>{r.verdict}</p>
+            </div>
+          </section>
+
+          <section>
+            <div className="row" style={{ justifyContent: "space-between" }}>
+              <div className="eyebrow">Narrator&apos;s brief</div>
+              <div className="tabs">
+                <button className={`tab ${lang === "en" ? "on" : ""}`} onClick={() => setLang("en")}>English</button>
+                <button className={`tab ${lang === "hi" ? "on" : ""}`} onClick={() => setLang("hi")}>हिन्दी</button>
+              </div>
+            </div>
+            <p className="brief">{rec.brief ? <RichText text={lang === "hi" ? rec.brief.hi ?? rec.brief.en : rec.brief.en} /> : "..."}</p>
+            {rec.brief && (
+              <p className="tiny muted">
+                Written by {rec.brief.provider === "template" ? "the fixed template" : "our AI"} from ledger rows only · number check{" "}
+                {rec.brief.checked ? "passed" : "failed"}
+              </p>
+            )}
+          </section>
 
           {r.series && (
-            <div className="card" style={{ marginTop: 16 }}>
-              <div className="eyebrow">Time series · {r.dataset}</div>
+            <section>
+              <div className="eyebrow">
+                Time series · <RichText text={`[regional series CSV](/api/cases/${rec.id}/data.csv) from [NASA POWER](${rec.sources?.find((x) => x.station === "power")?.url ?? "https://power.larc.nasa.gov/"})`} />
+              </div>
               <SeriesChart s={r.series} units={plan.units} />
-            </div>
+            </section>
           )}
 
-          <div className="grid g2" style={{ marginTop: 16 }}>
+          <div className="grid g2">
             {r.skeptic && (
-              <div className="card">
+              <section>
                 <div className="eyebrow" style={{ color: "var(--alert)" }}>Skeptic&apos;s cross-examination</div>
                 <table>
                   <tbody>
                     {r.skeptic.map((t) => (
                       <tr key={t.id}>
-                        <td style={{ width: 150 }}>{t.name}</td>
+                        <td style={{ width: 130 }}>{t.name}</td>
                         <td><span className={`pill ${t.status === "pass" ? "ok" : t.status === "fail" ? "alert" : "na"}`}>{t.status}</span></td>
                         <td className="small muted">{t.detail}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
-                <p className="small muted" style={{ marginTop: 8 }}>Grade {r.grade}: {r.gradeReason}.</p>
-              </div>
+              </section>
             )}
             {r.map && (
-              <div className="card">
-                <div className="eyebrow">Opposite-story detector · per-cell trends, FDR 5%</div>
+              <section>
+                <div className="eyebrow">Where it changes · per-cell trends, FDR 5%</div>
                 <OppositeMap map={r.map} units={plan.units} />
-              </div>
+              </section>
             )}
           </div>
 
-          <div className="grid g2" style={{ marginTop: 16 }}>
+          <div className="grid g2">
             {r.drivers && r.drivers.length > 0 && (
-              <div className="card">
-                <div className="eyebrow" style={{ color: "var(--ai)" }}>Driver Analyst · association, not cause</div>
+              <section>
+                <div className="eyebrow" style={{ color: "var(--ai)" }}>Drivers · association, not cause</div>
                 <table>
                   <thead><tr><th>Driver</th><th>r</th><th>Lag</th><th>p</th><th>Granger p</th></tr></thead>
                   <tbody>
@@ -285,113 +433,126 @@ export default function CaseView({ id }: { id: string }) {
                     ))}
                   </tbody>
                 </table>
-              </div>
+              </section>
             )}
-            <div className="card">
-              <div className="eyebrow" style={{ color: "var(--watch)" }}>Forecaster · hazard odds</div>
+            <section>
+              <div className="eyebrow" style={{ color: "var(--watch)" }}>Hazard odds · analog climatology</div>
               {r.forecast?.horizons.length ? (
                 <>
                   <table>
                     <thead><tr><th>Hazard</th><th>Typical</th><th>1991-05</th><th>2010+</th><th>Now*</th></tr></thead>
                     <tbody>
-                      {r.forecast.horizons.map((h) => (
-                        <tr key={h.label} title={h.definition}>
-                          <td>{h.label}</td>
-                          <td className="num">{fmt(h.pAll * 100, 2)}%</td>
-                          <td className="num">{fmt(h.pEarly * 100, 2)}%</td>
-                          <td className="num">{fmt(h.pRecent * 100, 2)}%</td>
-                          <td className="num">{h.pAnalog !== null ? `${fmt(h.pAnalog * 100, 2)}%` : "n/a"}</td>
+                      {r.forecast.horizons.map((hz) => (
+                        <tr key={hz.label} title={hz.definition}>
+                          <td>{hz.label}</td>
+                          <td className="num">{fmt(hz.pAll * 100, 2)}%</td>
+                          <td className="num">{fmt(hz.pEarly * 100, 2)}%</td>
+                          <td className="num">{fmt(hz.pRecent * 100, 2)}%</td>
+                          <td className="num">{hz.pAnalog !== null ? `${fmt(hz.pAnalog * 100, 2)}%` : "n/a"}</td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                   <p className="tiny muted" style={{ marginTop: 8 }}>
-                    *{r.forecast.horizons[0].analogNote} Event: {r.forecast.horizons[0].definition}. {r.forecast.note}
+                    <RichText
+                      text={`*${r.forecast.horizons[0].analogNote} From the [NASA POWER daily record](${rec.sources?.find((x) => x.agent === "forecaster")?.url ?? "https://power.larc.nasa.gov/"}). ${r.forecast.note}`}
+                    />
                   </p>
                 </>
               ) : (
                 <p className="small muted">No hazard link for this variable, or it is the dry season for this hazard.</p>
               )}
-            </div>
+            </section>
           </div>
 
           {r.witness && (
-            <div className="card" style={{ marginTop: 16 }}>
-              <div className="eyebrow" style={{ color: "var(--ok)" }}>Satellite Witness · NASA GIBS MODIS true colour · NASA EONET</div>
+            <section>
+              <div className="eyebrow" style={{ color: "var(--ok)" }}>Satellite Witness</div>
               <div className="grid g3">
-                {r.witness.images.map((im) => (
-                  <figure key={im.name} style={{ margin: 0 }}>
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={im.url} alt={`MODIS true colour ${im.date}`} style={{ width: "100%", borderRadius: 8, border: "1px solid var(--line)" }} />
-                    <figcaption className="tiny muted">{im.date}</figcaption>
-                  </figure>
-                ))}
-                <div>
+                {r.witness.images.map((im) => {
+                  const src = rec.sources?.find((x) => x.station === "gibs" && x.label.endsWith(im.date));
+                  return (
+                    <figure key={im.name} style={{ margin: 0 }}>
+                      <a href={src?.url ?? im.url} target="_blank" rel="noreferrer">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={im.url} alt={`MODIS true colour ${im.date}`} style={{ width: "100%", borderRadius: 8, border: "1px solid var(--line)" }} />
+                      </a>
+                      <figcaption className="tiny muted">MODIS Terra true colour, {im.date} (NASA GIBS)</figcaption>
+                    </figure>
+                  );
+                })}
+                <div className="small">
                   {r.witness.note && (
-                    <p className="small">
-                      <span className="pill ai">AI observation</span> {r.witness.note.text}
+                    <p>
+                      <span className="pill ai">our AI</span> {r.witness.note.text}
                     </p>
                   )}
-                  <div className="small muted">EONET events in the last year: {r.witness.events.length}</div>
-                  <ul className="small" style={{ paddingLeft: 18 }}>
+                  <ul style={{ paddingLeft: 18 }}>
                     {r.witness.events.slice(0, 6).map((e) => (
                       <li key={e.id}>
                         <a href={e.link} target="_blank" rel="noreferrer">{e.title}</a> <span className="muted">({e.category}, {e.date})</span>
                       </li>
                     ))}
                   </ul>
-                  {r.exposure && (
-                    <p className="small muted">
-                      Exposure: about {fmt(r.exposure.areaKm2, 3)} km2{r.exposure.fires ? `, ${r.exposure.fires.count} fire detections in 7 days` : ""}. {r.exposure.note}
-                    </p>
-                  )}
                 </div>
               </div>
-            </div>
+            </section>
           )}
 
-          <div className="card" style={{ marginTop: 16 }}>
-            <div className="row" style={{ justifyContent: "space-between" }}>
-              <div className="eyebrow">Evidence ledger · {rec.ledger.length} rows</div>
-              <button className="btn" onClick={() => setShowLedger((s) => !s)}>{showLedger ? "Hide" : "Show"} ledger</button>
-            </div>
-            {showLedger && (
-              <table>
-                <thead><tr><th>ID</th><th>Agent</th><th>Measure</th><th>Value</th><th>Method</th><th>Dataset</th></tr></thead>
-                <tbody>
-                  {rec.ledger.map((l) => (
-                    <tr key={l.id}>
-                      <td className="num">{l.id}</td>
-                      <td style={{ color: agentById(l.agent).color }}>{agentById(l.agent).name}</td>
-                      <td>{l.label}</td>
-                      <td className="num">{l.display}{l.unit ? ` ${l.unit}` : ""}</td>
-                      <td className="small muted">{l.method}</td>
-                      <td className="small muted">{l.dataset}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-            {r.related && r.related.length > 0 && (
-              <p className="small muted" style={{ marginTop: 10 }}>
-                Full-resolution NASA products (CMR):{" "}
-                {r.related.map((c, i) => (
-                  <span key={c.shortName}>
-                    {i ? ", " : ""}
-                    <a href={c.link} target="_blank" rel="noreferrer">{c.shortName}</a>
-                  </span>
+          <section>
+            <div className="eyebrow">Evidence ledger · {rec.ledger.length} rows</div>
+            <table>
+              <thead><tr><th>ID</th><th>Agent</th><th>Measure</th><th>Value</th><th>Data</th></tr></thead>
+              <tbody>
+                {rec.ledger.map((l) => (
+                  <tr key={l.id}>
+                    <td className="num">{l.id}</td>
+                    <td style={{ color: agentById(l.agent).color }}>{agentById(l.agent).name}</td>
+                    <td>
+                      {l.label}
+                      <div className="tiny muted">{l.method}</div>
+                    </td>
+                    <td className="num">{l.display}{l.unit ? ` ${l.unit}` : ""}</td>
+                    <td className="small">
+                      {l.source ? (
+                        <a href={l.source.url} target="_blank" rel="noreferrer">{l.source.label}</a>
+                      ) : (
+                        <span className="muted">{l.dataset}</span>
+                      )}
+                    </td>
+                  </tr>
                 ))}
-              </p>
-            )}
-          </div>
-        </>
-      )}
+              </tbody>
+            </table>
+          </section>
 
-      {!done && rec.status !== "error" && (
-        <p className="small muted" style={{ marginTop: 14 }}>
-          The agents are working. Numbers appear in the Case File once the Skeptic has graded them. {AGENTS.length} agents · ledger rows so far: {rec.ledger.length}
-        </p>
+          <section>
+            <div className="eyebrow">Every data query in this case</div>
+            {STATIONS.filter((st) => (rec.sources ?? []).some((x) => x.station === st.id)).map((st) => (
+              <div key={st.id} style={{ marginBottom: 10 }}>
+                <b style={{ color: st.color }}>{st.name}</b>
+                <ul className="srclist rt">
+                  {(rec.sources ?? [])
+                    .filter((x) => x.station === st.id)
+                    .map((x, i) => (
+                      <li key={i}>
+                        <span>{agentById(x.agent).name}</span>
+                        <a href={x.url} target="_blank" rel="noreferrer">{x.label}</a>
+                      </li>
+                    ))}
+                </ul>
+              </div>
+            ))}
+          </section>
+          {rec.reportId && (
+            <p className="small">
+              <Link href={`/reports/${rec.reportId}`}>Open the printable report</Link> · <a href={`/api/reports/${rec.reportId}?format=md`}>Download .md</a>
+            </p>
+          )}
+        </aside>
       )}
-    </main>
+    </div>
   );
 }
+
+export const AGENT_COUNT = AGENTS.length;

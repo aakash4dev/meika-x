@@ -25,8 +25,19 @@ export const inPeriod = (pts: MonthlyPoint[], start: number, end: number) => pts
 export async function loadData(ctx: CaseContext): Promise<RegionalMonthly> {
   const plan = ctx.rec.plan!;
   const params = [...new Set([plan.variable, ...plan.drivers, ...(plan.related ? [plan.related] : [])])];
-  await ctx.emit("statistician", "tool", `Fetching monthly ${params.join(", ")} for a grid over ${plan.regionName} from NASA POWER.`);
-  return fetchRegionalMonthly(plan.bbox, params, plan.startYear, plan.endYear, 4);
+  const data = await fetchRegionalMonthly(plan.bbox, params, plan.startYear, plan.endYear, 4);
+  data.cells.forEach((c, i) =>
+    ctx.source("statistician", "power", `NASA POWER monthly ${params.join(", ")}, cell ${i + 1} (${c.lat.toFixed(2)}N, ${c.lon.toFixed(2)}E)`, c.url),
+  );
+  await ctx.emit(
+    "statistician",
+    "tool",
+    `Pulled monthly ${params.join(", ")} ${plan.startYear}-${plan.endYear} from [NASA POWER](${data.cells[0].url}) for ${data.cells.length} grid cells over ${plan.regionName}: ${data.cells
+      .map((c, i) => `[cell ${i + 1}](${c.url})`)
+      .join(" ")}.`,
+    { station: "power" },
+  );
+  return data;
 }
 
 export interface TrendCore {
@@ -46,6 +57,8 @@ export async function runStatistician(ctx: CaseContext, data: RegionalMonthly): 
   const plan = ctx.rec.plan!;
   const v = variableById(plan.variable)!;
   const ds = `${v.source}; POWER API ${data.apiVersion}`;
+  const csv = { label: "regional monthly series (CSV)", url: `/api/cases/${ctx.id}/data.csv` };
+  const src = { label: `NASA POWER query, cell 1 of ${data.cells.length}`, url: data.cells[0].url };
   const region = plan.regionName;
   const points = inPeriod(data.mean[plan.variable] ?? [], plan.startYear, plan.endYear);
   if (points.length < 60) {
@@ -97,7 +110,7 @@ export async function runStatistician(ctx: CaseContext, data: RegionalMonthly): 
 
   const u = plan.units;
   const L = (key: string, label: string, value: number | string | null, display: string, method: string, unit?: string) =>
-    ctx.ledger("statistician", key, label, value, { display, unit, dataset: ds, method: `${method}; region ${region}` });
+    ctx.ledger("statistician", key, label, value, { display, unit, dataset: ds, method: `${method}; region ${region}`, source: csv });
 
   const ids = [
     L("n_months", "Months analysed", points.length, String(points.length), `monthly means ${plan.startYear}-${plan.endYear}`).id,
@@ -122,7 +135,7 @@ export async function runStatistician(ctx: CaseContext, data: RegionalMonthly): 
   await ctx.emit(
     "statistician",
     "ledger",
-    `Trend ${fmtSigned(stats.slopeDecade)} ${u} per decade (95% interval ${fmt(stats.ciDecade[0])} to ${fmt(stats.ciDecade[1])}). t-test p ${fmtP(fit.p)} with ${fmt(fit.nEff, 3)} effective samples; Mann-Kendall p ${fmtP(mk.p)}.`,
+    `Trend ${fmtSigned(stats.slopeDecade)} ${u} per decade (95% interval ${fmt(stats.ciDecade[0])} to ${fmt(stats.ciDecade[1])}). t-test p ${fmtP(fit.p)} with ${fmt(fit.nEff, 3)} effective samples; Mann-Kendall p ${fmtP(mk.p)}. Computed from the [${csv.label}](${csv.url}), built from [NASA POWER](${src.url}).`,
     { ledgerIds: ids },
   );
   await ctx.emit(
@@ -179,6 +192,7 @@ export async function runStatistician(ctx: CaseContext, data: RegionalMonthly): 
       opposite: sigPos > 0 && sigNeg > 0,
     };
     ctx.rec.results.map = map;
+    const cellSrc = (i: number) => data.cells.find((c) => c.row === cells[i].row && c.col === cells[i].col)?.url ?? src.url;
     const mIds = [
       L("cells", "Grid cells tested", cells.length, String(cells.length), "POWER points on a regular grid").id,
       L("cells_sig_pos", "Cells with a significant rise (FDR 5%)", sigPos, String(sigPos), "Benjamini-Hochberg, Wilks (2016)").id,
@@ -188,8 +202,18 @@ export async function runStatistician(ctx: CaseContext, data: RegionalMonthly): 
       "statistician",
       "ledger",
       map.opposite
-        ? `Opposite-story flag raised: ${sigPos} cells rise and ${sigNeg} cells fall significantly inside the same region.`
-        : `Map: ${sigPos} cells rise and ${sigNeg} fall significantly after false-discovery-rate control, out of ${cells.length}.`,
+        ? `Opposite-story flag raised: ${sigPos} cells rise and ${sigNeg} cells fall significantly inside the same region. Significant cells: ${cells
+            .map((c, i) => (c.sig ? `[${c.slopeDecade > 0 ? "rise" : "fall"} at ${c.lat.toFixed(1)}N ${c.lon.toFixed(1)}E](${cellSrc(i)})` : ""))
+            .filter(Boolean)
+            .join(", ")}.`
+        : `Map: ${sigPos} cells rise and ${sigNeg} fall significantly after false-discovery-rate control, out of ${cells.length}.${
+            sigPos + sigNeg
+              ? ` Significant cells: ${cells
+                  .map((c, i) => (c.sig ? `[${c.lat.toFixed(1)}N ${c.lon.toFixed(1)}E](${cellSrc(i)})` : ""))
+                  .filter(Boolean)
+                  .join(", ")}.`
+              : ""
+          }`,
       { ledgerIds: mIds },
     );
   }

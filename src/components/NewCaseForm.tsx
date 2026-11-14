@@ -47,7 +47,7 @@ export default function NewCaseForm() {
         <textarea
           id="q"
           rows={2}
-          placeholder="e.g. Is Delhi getting hotter in the afternoons?"
+          placeholder="e.g. Are European summers getting hotter?"
           value={question}
           onChange={(e) => setQuestion(e.target.value)}
           onKeyDown={(e) => {

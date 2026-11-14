@@ -25,10 +25,14 @@ Hard rules:
 - If the grade is D, say plainly that no trend could be distinguished from noise yet, and give the years-needed figure if present.
 - Plain language, short sentences, no headings, no bullet points, no markdown.
 - Write an English version and a Hindi version (Devanagari script) with the same content; in Hindi keep numbers in Western digits exactly as given.
+- Cite the data inline: when you mention the record, the satellite images, events or fires, turn the words into a markdown link using ONLY the links listed under "Links you may use", copied exactly, for example [NASA POWER monthly data](url). Use each link at most once per language, and never invent a URL.
 - End both versions with one sentence saying this is an advisory analysis, not an official warning.`;
 
+/** Markdown links are allowed in the brief; their URLs are not prose, so drop them before checking numbers. */
+const stripLinks = (t: string) => t.replace(/\[([^\]]*)\]\([^)]*\)/g, "$1");
+
 function numbersIn(text: string): string[] {
-  return (text.match(/\d+(?:\.\d+)?/g) ?? []).map((n) => String(Number(n)));
+  return (stripLinks(text).match(/\d+(?:\.\d+)?/g) ?? []).map((n) => String(Number(n)));
 }
 
 function allowedNumbers(rec: CaseRecord): Set<string> {
@@ -61,7 +65,36 @@ Grade reason: ${rec.results.gradeReason ?? "n/a"}
 Opposite-story flag: ${rec.results.map?.opposite ? "raised" : "not raised"}
 
 Ledger rows (key | label | display):
-${rows}`;
+${rows}
+
+Links you may use (label -> url):
+${briefLinks(rec)
+  .map((l) => `${l.label} -> ${l.url}`)
+  .join("\n")}`;
+}
+
+/** A small, digit-free set of links the Narrator may cite. */
+function briefLinks(rec: CaseRecord) {
+  const out: { label: string; url: string }[] = [];
+  const first = (st: string) => rec.sources?.find((s) => s.station === st);
+  const power = first("power");
+  if (power) out.push({ label: "NASA POWER monthly data", url: power.url });
+  out.push({ label: "regional series CSV", url: `/api/cases/${rec.id}/data.csv` });
+  const gibs = first("gibs");
+  if (gibs) out.push({ label: "MODIS satellite image", url: gibs.url });
+  const eonet = first("eonet");
+  if (eonet) out.push({ label: "NASA EONET events", url: eonet.url });
+  const firms = first("firms");
+  if (firms) out.push({ label: "NASA FIRMS fire map", url: firms.url });
+  const daily = rec.sources?.find((s) => s.agent === "forecaster");
+  if (daily) out.push({ label: "NASA POWER daily record", url: daily.url });
+  return out;
+}
+
+/** Keep only links that the Narrator was given (no invented URLs reach the page). */
+function onlyKnownLinks(rec: CaseRecord, text: string) {
+  const allowed = new Set(briefLinks(rec).map((l) => l.url));
+  return text.replace(/\[([^\]]*)\]\(([^)]*)\)/g, (m, label, url) => (allowed.has(url) ? m : label));
 }
 
 export function templateBrief(rec: CaseRecord): { en: string; hi: string } {
@@ -103,7 +136,7 @@ export function templateBrief(rec: CaseRecord): { en: string; hi: string } {
 
 export async function runNarrator(ctx: CaseContext) {
   const rec = ctx.rec;
-  await ctx.emit("narrator", "say", "Writing the brief from ledger rows only. Every number I use must match a row.");
+  await ctx.emit("narrator", "tool", "Writing the brief with our AI from ledger rows only. Every number I use must match a row.", { station: "claude" });
   let brief: CaseBrief | null = null;
   let feedback = "";
   for (let attempt = 0; attempt < 2 && !brief; attempt++) {
@@ -117,7 +150,7 @@ export async function runNarrator(ctx: CaseContext) {
     if (!ai) break;
     const unmatched = checkBrief(rec, `${ai.data.en}\n${ai.data.hi}`);
     if (unmatched.length === 0) {
-      brief = { en: ai.data.en, hi: ai.data.hi, provider: ai.provider as "api" | "cli", checked: true, unmatched: [] };
+      brief = { en: onlyKnownLinks(rec, ai.data.en), hi: onlyKnownLinks(rec, ai.data.hi), provider: ai.provider as "api" | "cli", checked: true, unmatched: [] };
     } else {
       await ctx.emit("narrator", "warn", `Number check failed for ${unmatched.join(", ")}. Rewriting.`);
       feedback = `\n\nYour previous draft used numbers that are not in the ledger: ${unmatched.join(", ")}. Remove them or replace them with ledger values.`;
@@ -126,8 +159,8 @@ export async function runNarrator(ctx: CaseContext) {
   if (!brief) {
     const t = templateBrief(rec);
     brief = { en: t.en, hi: t.hi, provider: "template", checked: checkBrief(rec, `${t.en}\n${t.hi}`).length === 0, unmatched: [] };
-    await ctx.emit("narrator", "say", "Claude was unavailable or failed the number check, so I used the fixed template.");
+    await ctx.emit("narrator", "say", "Our AI was unavailable or failed the number check, so I used the fixed template.");
   }
   rec.brief = brief;
-  await ctx.emit("narrator", "done", `Brief ready (${brief.provider === "template" ? "template" : `Claude via ${brief.provider}`}, number check ${brief.checked ? "passed" : "FAILED"}).`);
+  await ctx.emit("narrator", "done", `Brief ready (${brief.provider === "template" ? "template" : "our AI"}, number check ${brief.checked ? "passed" : "FAILED"}).`);
 }

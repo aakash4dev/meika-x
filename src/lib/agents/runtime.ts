@@ -1,7 +1,7 @@
 // Case runtime: holds live case state in memory (shared across route bundles via globalThis),
 // persists it to .data/cases, and gives agents emit() and ledger() helpers.
 import { dataPath, listJSON, readJSON, writeJSON } from "../store";
-import type { AgentId, CaseRecord, EventKind, LedgerRow } from "./types";
+import type { AgentId, CaseRecord, EventKind, LedgerRow, Station } from "./types";
 
 type G = typeof globalThis & { __meikaCases?: Map<string, CaseRecord> };
 const g = globalThis as G;
@@ -12,16 +12,25 @@ export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export const caseFile = (id: string) => dataPath("cases", `${id}.json`);
 
+/** A case left "running" by a server restart is reported as interrupted instead of hanging forever. */
+function settle(rec: CaseRecord): CaseRecord {
+  if (rec.status === "running" && !live.has(rec.id)) {
+    return { ...rec, status: "error", error: "Interrupted: the server restarted while this case was running. Open it again to re-run." };
+  }
+  return rec;
+}
+
 export async function getCase(id: string): Promise<CaseRecord | null> {
   if (!/^[\w-]+$/.test(id)) return null;
-  return live.get(id) ?? (await readJSON<CaseRecord | null>(caseFile(id), null));
+  const rec = live.get(id) ?? (await readJSON<CaseRecord | null>(caseFile(id), null));
+  return rec ? settle(rec) : null;
 }
 
 export async function listCases(): Promise<CaseRecord[]> {
   const stored = await listJSON<CaseRecord>(dataPath("cases"));
   const byId = new Map(stored.map((c) => [c.id, c]));
   for (const c of live.values()) byId.set(c.id, c);
-  return [...byId.values()].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+  return [...byId.values()].map(settle).sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
 }
 
 export class CaseContext {
@@ -46,7 +55,19 @@ export class CaseContext {
     }, 400);
   }
 
-  async emit(agent: AgentId, kind: EventKind, text: string, extra: { target?: AgentId; ledgerIds?: string[] } = {}) {
+  /** Record an external query (shown as a link in chat, reports and the station panel). Returns a markdown link. */
+  source(agent: AgentId, station: Station, label: string, url: string): string {
+    (this.rec.sources ??= []).push({ agent, station, label, url, at: new Date().toISOString() });
+    this.touch();
+    return `[${label}](${url})`;
+  }
+
+  async emit(
+    agent: AgentId,
+    kind: EventKind,
+    text: string,
+    extra: { target?: AgentId; ledgerIds?: string[]; station?: Station } = {},
+  ) {
     this.rec.activeAgent = agent;
     this.rec.transcript.push({
       seq: this.rec.transcript.length + 1,
@@ -57,7 +78,7 @@ export class CaseContext {
       ...extra,
     });
     this.touch();
-    if (kind === "say" || kind === "plan" || kind === "handoff" || kind === "verdict") await sleep(PACE_MS);
+    if (kind === "say" || kind === "plan" || kind === "handoff" || kind === "verdict" || extra.station) await sleep(PACE_MS);
   }
 
   ledger(
@@ -65,7 +86,7 @@ export class CaseContext {
     key: string,
     label: string,
     value: LedgerRow["value"],
-    opts: { display?: string; unit?: string; dataset: string; method: string },
+    opts: { display?: string; unit?: string; dataset: string; method: string; source?: { label: string; url: string } },
   ): LedgerRow {
     const row: LedgerRow = {
       id: `L${String(this.rec.ledger.length + 1).padStart(3, "0")}`,
@@ -77,6 +98,7 @@ export class CaseContext {
       unit: opts.unit,
       dataset: opts.dataset,
       method: opts.method,
+      source: opts.source,
     };
     this.rec.ledger.push(row);
     this.touch();

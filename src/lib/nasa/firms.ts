@@ -5,6 +5,15 @@ import type { BBox } from "../catalog";
 
 export const firmsEnabled = () => Boolean(process.env.FIRMS_MAP_KEY);
 
+/** Public FIRMS Fire Map view of a box. The API URL itself contains the private MAP_KEY, so it is never shown. */
+export function firmsMapUrl(b: BBox, days = 1) {
+  const lat = ((b.south + b.north) / 2).toFixed(2);
+  const lon = ((b.west + b.east) / 2).toFixed(2);
+  const span = Math.max(b.east - b.west, b.north - b.south);
+  const zoom = span > 8 ? 5 : span > 3 ? 6 : 8;
+  return `https://firms.modaps.eosdis.nasa.gov/map/#d:${days === 1 ? "24hrs" : `${days}days`};@${lon},${lat},${zoom}z`;
+}
+
 export interface FireSummary {
   count: number;
   highConfidence: number;

@@ -1,5 +1,6 @@
 import { AGENTS } from "@/lib/agents/meta";
 import SystemStatus from "@/components/SystemStatus";
+import AgentTree from "@/components/AgentTree";
 
 export const metadata = { title: "Agents & system · MEIKA-X" };
 
@@ -9,9 +10,12 @@ export default function SystemPage() {
       <h1>The agent society</h1>
       <p className="muted" style={{ maxWidth: 820 }}>
         Eight agents, each with a narrow job, a fixed set of tools and a defined output. They share one case state and communicate through the evidence
-        ledger, so runs are replayable. Numbers come from deterministic code; Claude is used only where language or vision is the job, and every Claude
+        ledger, so runs are replayable. Numbers come from deterministic code; our AI (running on Anthropic Claude) is used only where language or vision is the job, and every AI
         step has a non-AI fallback.
       </p>
+      <div style={{ margin: "18px 0" }}>
+        <AgentTree question="Is the monsoon changing the same way everywhere?" snippets={["GET power.larc.nasa.gov", "+ slope per decade", "Mann-Kendall (Hamed-Rao)", "grade = A..D", "GET eonet …/events", "+ FDR 5% per cell", "brief.hi ✓ number check", "Granger p"]} />
+      </div>
       <div className="card" style={{ marginTop: 12 }}>
         <table>
           <thead>
@@ -28,7 +32,7 @@ export default function SystemPage() {
               <tr key={a.id}>
                 <td style={{ color: a.color, fontWeight: 700, whiteSpace: "nowrap" }}>{a.name}</td>
                 <td>
-                  <span className={`pill ${a.engine}`}>{a.engine === "code" ? "code" : a.engine === "ai" ? "Claude" : "code + Claude"}</span>
+                  <span className={`pill ${a.engine}`}>{a.engine === "code" ? "code" : a.engine === "ai" ? "Our AI" : "code + AI"}</span>
                 </td>
                 <td className="small">
                   {a.job}

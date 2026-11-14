@@ -25,6 +25,11 @@ export function wmsUrl(layer: string, b: BBox, width: number, height: number, da
   return `${WMS}?${q.toString()}`;
 }
 
+/** NASA Worldview view of the same box, date and layer (human-friendly companion to the WMS image). */
+export function worldviewUrl(layer: string, b: BBox, date: string) {
+  return `https://worldview.earthdata.nasa.gov/?v=${b.west},${b.south},${b.east},${b.north}&t=${date}-T00%3A00%3A00Z&l=${layer},Coastlines_15m`;
+}
+
 export async function snapshot(layer: string, b: BBox, date?: string, maxSide = 768) {
   const aspect = (b.east - b.west) / Math.max(0.01, b.north - b.south);
   const width = aspect >= 1 ? maxSide : Math.round(maxSide * aspect);

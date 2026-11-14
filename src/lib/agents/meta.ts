@@ -17,7 +17,7 @@ export interface AgentMeta {
   tools: string;
   output: string;
   color: string;
-  /** "code" = deterministic software; "ai" = uses Claude; "hybrid" = code plus an optional Claude step */
+  /** "code" = deterministic software; "ai" = uses our AI; "hybrid" = code plus an optional AI step */
   engine: "code" | "ai" | "hybrid";
   aiRole?: string;
 }
@@ -92,7 +92,7 @@ export const AGENTS: AgentMeta[] = [
     id: "narrator",
     name: "Narrator",
     job: "Writes the Case File brief in English and Hindi.",
-    tools: "Claude, ledger rows only, automated number check",
+    tools: "Our AI, ledger rows only, automated number check",
     output: "Text where every number links to a ledger row",
     color: "#d9578f",
     engine: "ai",

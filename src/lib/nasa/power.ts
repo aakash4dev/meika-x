@@ -26,6 +26,7 @@ export function lastFullYear(): number {
 export interface PowerMonthly {
   lat: number;
   lon: number;
+  url: string;
   series: Record<string, MonthlyPoint[]>;
   apiVersion: string;
   sources: string[];
@@ -57,6 +58,7 @@ export async function fetchMonthly(
   return {
     lat,
     lon,
+    url,
     series,
     apiVersion: data.header?.api?.version ?? "unknown",
     sources: data.header?.sources ?? [],
@@ -93,7 +95,7 @@ export function gridCells(b: BBox, maxPerSide = 4): GridCell[] {
 }
 
 export interface RegionalMonthly {
-  cells: (GridCell & { series: Record<string, MonthlyPoint[]> })[];
+  cells: (GridCell & { series: Record<string, MonthlyPoint[]>; url: string })[];
   mean: Record<string, MonthlyPoint[]>;
   apiVersion: string;
   sources: string[];
@@ -126,7 +128,7 @@ export async function fetchRegionalMonthly(
       .sort((a, b2) => a.t - b2.t);
   }
   return {
-    cells: cells.map((c, i) => ({ ...c, series: results[i].series })),
+    cells: cells.map((c, i) => ({ ...c, series: results[i].series, url: results[i].url })),
     mean: meanSeries,
     apiVersion: results[0]?.apiVersion ?? "unknown",
     sources: results[0]?.sources ?? [],
@@ -142,22 +144,24 @@ export interface DailyPoint {
 
 const ymd = (d: Date) => d.toISOString().slice(0, 10).replace(/-/g, "");
 
+export interface PowerDaily {
+  series: Record<string, DailyPoint[]>;
+  /** [climatology query, recent query] */
+  urls: [string, string];
+}
+
 /** Daily point series. Long climatology is cached for a week; the recent tail for six hours. */
-export async function fetchDaily(
-  lat: number,
-  lon: number,
-  params: string[],
-  startYear = 1991,
-): Promise<Record<string, DailyPoint[]>> {
+export async function fetchDaily(lat: number, lon: number, params: string[], startYear = 1991): Promise<PowerDaily> {
   const today = new Date();
   const climEnd = new Date(Date.UTC(today.getUTCFullYear() - 1, 11, 31));
   const recentStart = new Date(Date.UTC(today.getUTCFullYear(), 0, 1));
   const mk = (s: string, e: string) =>
     `${BASE}/daily/point?parameters=${params.join(",")}&community=AG&longitude=${lon.toFixed(3)}` +
     `&latitude=${lat.toFixed(3)}&start=${s}&end=${e}&format=JSON`;
+  const urls: [string, string] = [mk(`${startYear}0101`, ymd(climEnd)), mk(ymd(recentStart), ymd(today))];
   const [clim, recent] = await Promise.all([
-    cachedJSON<PowerResponse>(mk(`${startYear}0101`, ymd(climEnd)), { ttlSeconds: 7 * 86400, timeoutMs: 120000 }),
-    cachedJSON<PowerResponse>(mk(ymd(recentStart), ymd(today)), { ttlSeconds: 6 * 3600, timeoutMs: 60000 }),
+    cachedJSON<PowerResponse>(urls[0], { ttlSeconds: 7 * 86400, timeoutMs: 120000 }),
+    cachedJSON<PowerResponse>(urls[1], { ttlSeconds: 6 * 3600, timeoutMs: 60000 }),
   ]);
   const out: Record<string, DailyPoint[]> = {};
   for (const p of params) {
@@ -176,7 +180,7 @@ export async function fetchDaily(
       })
       .sort((a, b) => (a.date < b.date ? -1 : 1));
   }
-  return out;
+  return { series: out, urls };
 }
 
 export const meanOf = (pts: { value: number }[]) => mean(pts.map((p) => p.value));

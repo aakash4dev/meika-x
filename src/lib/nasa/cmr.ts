@@ -9,8 +9,11 @@ export interface CmrCollection {
   link: string;
 }
 
+export const collectionsUrl = (keyword: string, limit = 4) =>
+  `https://cmr.earthdata.nasa.gov/search/collections.json?keyword=${encodeURIComponent(keyword)}&page_size=${limit}&sort_key=-usage_score`;
+
 export async function searchCollections(keyword: string, limit = 4): Promise<CmrCollection[]> {
-  const url = `https://cmr.earthdata.nasa.gov/search/collections.json?keyword=${encodeURIComponent(keyword)}&page_size=${limit}&sort_key=-usage_score`;
+  const url = collectionsUrl(keyword, limit);
   const data = await cachedJSON<{ feed: { entry: { short_name: string; title: string; version_id: string; id: string }[] } }>(
     url,
     { ttlSeconds: 7 * 86400, timeoutMs: 30000 },

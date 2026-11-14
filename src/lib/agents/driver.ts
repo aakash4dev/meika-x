@@ -15,7 +15,12 @@ export async function runDriver(ctx: CaseContext, data: RegionalMonthly) {
     await ctx.emit("driver", "warn", "Not enough data to test drivers.");
     return;
   }
-  await ctx.emit("driver", "say", `Testing ${plan.drivers.length} candidate drivers. I compare anomalies after removing season and trend, so shared warming alone cannot fake a link.`);
+  await ctx.emit(
+    "driver",
+    "tool",
+    `Reading ${plan.drivers.join(", ")} from the same [NASA POWER grid](${data.cells[0].url}) to test ${plan.drivers.length} candidate drivers. I compare anomalies after removing season and trend, so shared warming alone cannot fake a link.`,
+    { station: "power" },
+  );
   const yMap = new Map(target.map((p) => [p.ym, p]));
   const rows: DriverRow[] = [];
   for (const d of plan.drivers) {
@@ -50,6 +55,7 @@ export async function runDriver(ctx: CaseContext, data: RegionalMonthly) {
         display: fmt(r.r, 2),
         dataset: ds,
         method: `best lag ${r.lag} months (0-6), detrended deseasonalised anomalies, p ${fmtP(r.p)}`,
+        source: { label: `NASA POWER ${r.variable}`, url: data.cells[0].url },
       }).id,
       ctx.ledger("driver", `driver_lag_${r.variable}`, `Lag of ${r.name} (months)`, r.lag, { display: String(r.lag), dataset: ds, method: "lag of maximum |r|" }).id,
       ctx.ledger("driver", `driver_granger_${r.variable}`, `Granger p-value, ${r.name}`, r.grangerP, {

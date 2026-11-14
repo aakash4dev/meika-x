@@ -1,8 +1,8 @@
 // Chief Detective: turns a question into a case plan, and writes the final verdict.
 import { z } from "zod";
 import { aiJSON } from "../ai/claude";
-import { REGIONS, VARIABLES, regionById, validBBox, variableById } from "../catalog";
-import { searchCollections } from "../nasa/cmr";
+import { DEFAULT_REGION_ID, REGIONS, VARIABLES, regionById, validBBox, variableById } from "../catalog";
+import { collectionsUrl, searchCollections } from "../nasa/cmr";
 import { POWER_FIRST_YEAR, lastFullYear } from "../nasa/power";
 import { fmt, fmtSigned } from "../format";
 import type { CaseContext } from "./runtime";
@@ -76,18 +76,24 @@ function scoreVariable(question: string) {
 function matchRegion(question: string) {
   const q = question.toLowerCase();
   const aliases: Record<string, string[]> = {
+    "us-corn-belt": ["corn belt", "iowa", "illinois", "midwest"],
+    california: ["california", "central valley"],
+    amazon: ["amazon", "brazil", "rainforest"],
+    patagonia: ["patagonia", "argentina", "chile"],
+    "central-europe": ["europe", "germany", "czech", "poland", "austria"],
+    iberia: ["spain", "portugal", "iberia", "mediterranean"],
+    sahel: ["sahel", "niger", "mali", "burkina", "chad"],
+    "east-africa": ["kenya", "ethiopia", "somalia", "horn of africa", "east africa"],
+    "nile-delta": ["egypt", "nile", "cairo"],
+    "middle-east-gulf": ["gulf", "dubai", "uae", "qatar", "saudi", "arabia"],
     "delhi-ncr": ["delhi", "ncr", "gurgaon", "noida", "gurugram"],
     "nw-india": ["northwest india", "north-west india", "punjab", "haryana"],
-    "indo-gangetic": ["gangetic", "ganga", "bihar", "uttar pradesh"],
-    "india-monsoon": ["central india", "madhya pradesh", "monsoon belt"],
-    kerala: ["kerala", "western ghats", "wayanad"],
-    mumbai: ["mumbai", "bombay", "konkan"],
-    sundarbans: ["sundarbans", "sundarban", "bengal delta"],
-    sindh: ["sindh", "pakistan"],
-    sahel: ["sahel", "niger", "mali", "burkina"],
-    amazon: ["amazon", "brazil", "rainforest"],
-    california: ["california", "central valley"],
-    "se-australia": ["australia", "new south wales", "victoria"],
+    "india-monsoon": ["central india", "monsoon belt", "india"],
+    "north-china-plain": ["china", "beijing", "hebei", "shandong"],
+    "mekong-delta": ["mekong", "vietnam"],
+    "se-australia": ["australia", "new south wales", "victoria", "sydney", "melbourne"],
+    "alaska-north-slope": ["arctic", "alaska", "tundra"],
+    siberia: ["siberia", "yakutia", "russia", "permafrost"],
   };
   for (const [id, words] of Object.entries(aliases)) if (words.some((w) => q.includes(w))) return regionById(id) ?? null;
   return null;
@@ -104,7 +110,7 @@ export async function planCase(ctx: CaseContext, req: CaseRequest): Promise<Case
   let plannedBy: CasePlan["plannedBy"] = variableId && (regionId || req.bbox) ? "user" : "rules";
 
   if (!variableId || (!regionId && !validBBox(req.bbox))) {
-    await ctx.emit("chief", "tool", "Asking Claude to map the question onto the variable catalogue and region list.");
+    await ctx.emit("chief", "tool", "Asking our AI to map the question onto the variable catalogue and region list.", { station: "claude" });
     const catalogue = VARIABLES.map((v) => `${v.id}: ${v.name} - ${v.definition}`).join("\n");
     const regions = REGIONS.map((r) => `${r.id}: ${r.name} (${r.note})`).join("\n");
     const ai = await aiJSON({
@@ -126,7 +132,7 @@ export async function planCase(ctx: CaseContext, req: CaseRequest): Promise<Case
       rationale = ai.data.rationale;
       plannedBy = "claude";
     } else {
-      await ctx.emit("chief", "warn", "Claude is not available for planning, so I am using keyword rules instead.");
+      await ctx.emit("chief", "warn", "Our AI is not available for planning, so I am using keyword rules instead.");
       const sv = scoreVariable(req.question);
       variableId ??= sv.variable.id;
       regionId ??= matchRegion(req.question)?.id;
@@ -139,14 +145,14 @@ export async function planCase(ctx: CaseContext, req: CaseRequest): Promise<Case
   const variable = variableById(variableId!)!;
   const region = regionId ? regionById(regionId) : undefined;
   if (!region && !custom) {
-    await ctx.emit("chief", "warn", "I could not tell which place you mean, so I am using Delhi NCR. Pick a region or draw a box to investigate somewhere else.");
+    await ctx.emit("chief", "warn", `I could not tell which place you mean, so I am using ${regionById(DEFAULT_REGION_ID)!.name}. Name a place or pick a region to investigate somewhere else.`);
   }
-  const bbox = region?.bbox ?? custom?.bbox ?? regionById("delhi-ncr")!.bbox;
+  const bbox = region?.bbox ?? custom?.bbox ?? regionById(DEFAULT_REGION_ID)!.bbox;
   const regionName =
     region?.name ??
     (custom
       ? custom.name || `Custom box ${fmt(bbox.south)} to ${fmt(bbox.north)} N, ${fmt(bbox.west)} to ${fmt(bbox.east)} E`
-      : "Delhi NCR");
+      : regionById(DEFAULT_REGION_ID)!.name);
   const first = Math.max(variable.firstYear, POWER_FIRST_YEAR);
   const sy = Math.min(Math.max(first, startYear ?? first), lastFullYear() - 10);
 
@@ -177,8 +183,14 @@ export async function planCase(ctx: CaseContext, req: CaseRequest): Promise<Case
   try {
     const related = await searchCollections(variable.fullRes, 3);
     ctx.rec.results.related = related;
+    const q = ctx.source("chief", "cmr", `NASA CMR catalogue search for "${variable.fullRes}"`, collectionsUrl(variable.fullRes, 3));
     if (related.length)
-      await ctx.emit("chief", "tool", `NASA CMR lists the full-resolution products behind this variable: ${related.map((r) => r.shortName).join(", ")}.`);
+      await ctx.emit(
+        "chief",
+        "tool",
+        `${q} lists the full-resolution products behind this variable: ${related.map((r) => `[${r.shortName}](${r.link})`).join(", ")}.`,
+        { station: "cmr" },
+      );
   } catch {
     /* catalogue search is a nice-to-have */
   }

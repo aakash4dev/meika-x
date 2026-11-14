@@ -14,8 +14,8 @@ Team page: https://www.spaceappschallenge.org/2026/find-a-team/zentox · Repo: h
 | Page | What you get |
 |---|---|
 | **Cases** (`/`) | Ask a question or tap a starter. Pick a variable and region, or let the Chief Detective choose. |
-| **Agent room** (`/case/[id]`) | A 3D room (react-three-fiber) with the eight scientists around a holographic NASA Blue Marble globe. Whoever is working glows, speaks in a bubble and sends a beam to the globe. Click a scientist to see their job, tools and ledger rows. A live transcript sits alongside, and you can replay any finished case. |
-| **Case File** (same page) | Verdict and grade; Narrator brief (EN/हिन्दी); time-series chart with the trend and 95% band; Skeptic's tests; opposite-story map; drivers; hazard odds; satellite snapshots with EONET events; full evidence ledger. |
+| **Command Center** (`/case/[id]`) | A walkable 3D lab. Eight scientists sit around a holographic NASA Blue Marble globe; six data terminals line the walls (NASA POWER, NASA GIBS, NASA EONET, NASA FIRMS, NASA CMR, Our AI). When an agent actually calls an API, it walks to that terminal, a data stream lights up, and it walks back. **Orbit view** to look around, **Walk the lab** to explore in first person (click to look, WASD, Shift to run, E to open a terminal, Q to leave). Click any terminal or scientist for its panel. |
+| **Comms and Case File** (same page) | Live agent chat in which every data reference is an inline link to the exact NASA query used. Results panel (grade, trend, p-values, where it changes, hazard odds). The Case File drawer has the bilingual brief, chart, Skeptic tests, per-cell map, drivers, hazard odds, satellite images, an evidence ledger where each row links to its data, and every query grouped by terminal. |
 | **Monitoring** (`/monitor`) | Watchlist of regions with automatic checks (heat, heavy rain, dry spell, new NASA EONET events, NASA FIRMS fires). Live world map of open EONET events. Alerts go to Telegram. |
 | **Reports** (`/reports`) | Every case and every monitoring run is saved as a Markdown report, viewable and downloadable. |
 | **Agents & system** (`/system`) | The agent roster (which parts are code and which use Claude), the rules of the room, and live status of every integration. |
@@ -47,6 +47,8 @@ Team page: https://www.spaceappschallenge.org/2026/find-a-team/zentox · Repo: h
 | Exposure | code | What sits in the path | Region area, EONET events, FIRMS fires (with key), share of area with a significant trend |
 | Narrator | **Claude** | Case File brief in English and Hindi | Ledger rows only; an automated checker rejects any number not in the ledger (one retry, then a fixed template) |
 
+In the chat and reports the AI is called **Our AI**; it runs on Anthropic Claude (see below).
+
 **Rules of the room.** Numbers come from code; Claude never produces a figure. The Skeptic can lower a grade but not change data. Grade A needs an independent sensor dataset, so the current POWER-only build tops out at B. The bootstrap and placebo tests use fixed seeds, so the same case gives the same ledger.
 
 ---
@@ -66,6 +68,14 @@ Variables: air temperature, daily maximum temperature, precipitation, root-zone 
 All responses are cached on disk under `.data/cache`, so a demo keeps working when the venue Wi-Fi is bad.
 
 ---
+
+## Data links
+
+Every external query is recorded with its exact URL (`sources` on each case). Links appear inline in the chat, the Case File, the ledger, the Narrator's brief (it may cite only links it was given; anything else is stripped) and the Markdown reports. The regional series each case analysed is served as CSV at `/api/cases/{id}/data.csv`. FIRMS API URLs contain the private key, so FIRMS is linked through its public Fire Map instead.
+
+## Storage
+
+No database server. Everything is JSON on disk under `.data/` (gitignored): `cases/` (one file per case plus its satellite snapshots), `reports/`, `watchlist.json`, `alerts.json`, `monitor-state.json`, and `cache/` for NASA API responses. Writes are atomic (temp file then rename). For multi-instance hosting, swap `src/lib/store.ts` for SQLite or Postgres.
 
 ## Where Claude is used, and what happens without it
 
@@ -112,6 +122,7 @@ Requires Node.js 20+ (tested on 24).
 | `MONITOR_INTERVAL_MINUTES` | Automatic monitoring interval while the server runs (default 60; `0` = off) |
 | `CRON_SECRET` | Lets an external cron call `GET /api/monitor/run?secret=...` |
 | `FIRMS_MAP_KEY` | Enables NASA FIRMS fire checks |
+| `NASA_API_KEY` | api.nasa.gov key, optional (no current feature needs it) |
 | `MONITOR_AI_DIGEST` | `off` to skip the Claude summary of new alerts |
 | `CASE_PACING_MS` | Pause between agent messages so the room is watchable (default 450) |
 

@@ -3,6 +3,17 @@ import type { BBox, Hazard } from "../catalog";
 
 export type { AgentId };
 
+/** A 3D data terminal in the room; one per external service. */
+export type Station = "power" | "eonet" | "gibs" | "cmr" | "firms" | "claude";
+
+export interface SourceRef {
+  station: Station;
+  label: string;
+  url: string;
+  agent: AgentId;
+  at: string;
+}
+
 export interface LedgerRow {
   id: string; // L001...
   agent: AgentId;
@@ -13,6 +24,8 @@ export interface LedgerRow {
   unit?: string;
   dataset: string;
   method: string;
+  /** Link to the exact data this number was computed from. */
+  source?: { label: string; url: string };
 }
 
 export type EventKind = "plan" | "say" | "tool" | "ledger" | "handoff" | "verdict" | "warn" | "done";
@@ -25,6 +38,8 @@ export interface TranscriptEvent {
   text: string;
   target?: AgentId;
   ledgerIds?: string[];
+  /** The data terminal the agent walks to for this step. Text may contain [label](url) links. */
+  station?: Station;
 }
 
 export interface CasePlan {
@@ -170,6 +185,8 @@ export interface CaseRecord {
   activeAgent?: AgentId;
   transcript: TranscriptEvent[];
   ledger: LedgerRow[];
+  /** Every external query this case made, in order. */
+  sources: SourceRef[];
   results: {
     series?: SeriesForChart;
     stats?: StatsSummary;
