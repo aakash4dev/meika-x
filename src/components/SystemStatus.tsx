@@ -10,7 +10,12 @@ interface Ping {
 }
 interface Status {
   nasa: { power: Ping; eonet: Ping; gibs: Ping; cmr: Ping; firms: string };
-  ai: { provider: "api" | "cli" | "hf" | "none"; model: string; issue?: string | null };
+  ai: {
+    provider: "api" | "cli" | "hf" | "groq" | "none";
+    model: string;
+    issue?: string | null;
+    chain?: { provider: string; label: string; model: string; issue: string | null }[];
+  };
   telegram: boolean;
   database: { ok: boolean; ms: number; where: "local" | "cloud"; error?: string };
   scheduler: { intervalMin: number; startedAt: string } | null;
@@ -38,9 +43,9 @@ export default function SystemStatus() {
       s.ai.issue ? (
         <span key="a" className="pill alert">{/credits/i.test(s.ai.issue) ? "out of credits" : "not answering"}</span>
       ) : (
-        <span key="a" className={`pill ${s.ai.provider === "none" ? "na" : "ai"}`}>{s.ai.provider === "api" ? "Anthropic API" : s.ai.provider === "cli" ? "local Claude Code" : s.ai.provider === "hf" ? "DeepSeek (Hugging Face)" : "off"}</span>
+        <span key="a" className={`pill ${s.ai.provider === "none" ? "na" : "ai"}`}>{s.ai.provider === "api" ? "Anthropic API" : s.ai.provider === "cli" ? "local Claude Code" : s.ai.provider === "hf" ? "DeepSeek (Hugging Face)" : s.ai.provider === "groq" ? "Groq (free)" : "off"}</span>
       ),
-      `${s.ai.issue ? `${s.ai.issue} Until then the app uses its non-AI fallbacks. ` : ""}${s.ai.model} · planning, narration (English + local language), visual notes, alert digests. ${s.ai.provider === "none" ? "Set ANTHROPIC_API_KEY, install the claude CLI, or set HF_TOKEN for DeepSeek." : ""}`,
+      `${s.ai.issue ? `${s.ai.issue} Until then the app uses its non-AI fallbacks. ` : ""}${s.ai.chain && s.ai.chain.length > 1 ? `Order: ${s.ai.chain.map((c) => `${c.label} ${c.issue ? "✗" : "✓"}`).join(" → ")} · ` : ""}${s.ai.model} · planning, narration (English + local language), visual notes, alert digests. ${s.ai.provider === "none" ? "Set ANTHROPIC_API_KEY, install the claude CLI, or set HF_TOKEN (DeepSeek) or GROQ_API_KEY (Groq, free)." : ""}`,
     ],
     [
       "Database",

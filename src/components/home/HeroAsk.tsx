@@ -39,7 +39,7 @@ export default function HeroAsk() {
       >
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Ask about any place on Earth, e.g. Is the Arctic warming?" aria-label="Your question" />
         <button className="btn primary" disabled={busy}>
-          {busy ? <span className="spinner" /> : null} Open a case
+          {busy ? <span className="spinner" /> : null} Research
         </button>
       </form>
       <div className="lp-starters">

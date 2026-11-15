@@ -41,7 +41,7 @@ export default function NewCaseForm() {
 
   return (
     <div className="card">
-      <div className="eyebrow">Open a case</div>
+      <div className="eyebrow">Research</div>
       <div className="field">
         <label htmlFor="q">What do you want to investigate?</label>
         <textarea

@@ -1,6 +1,8 @@
 // AI access for the AI-specific features (planning, narration, visual notes, digests).
 // Order: Anthropic API (ANTHROPIC_API_KEY / ANTHROPIC_AUTH_TOKEN) -> local Claude Code CLI (`claude -p`)
-//        -> DeepSeek on Hugging Face (HF_TOKEN) -> none.
+//        -> DeepSeek on Hugging Face (HF_TOKEN) -> Groq (GROQ_API_KEY, free tier) -> none.
+// Each request tries the configured providers in that order and moves on when one fails
+// (e.g. Hugging Face out of credits), so a later provider can still answer.
 // Every caller has a deterministic fallback, so the app works with no AI at all.
 import Anthropic from "@anthropic-ai/sdk";
 import { spawn } from "child_process";
@@ -8,9 +10,13 @@ import { promises as fs } from "fs";
 import os from "os";
 import path from "path";
 import type { z } from "zod";
-import { HF_MODEL, hfIssue, hfJSON, hfText, hfToken } from "./hf";
+import type { CompatProvider } from "./compat";
+import { groq } from "./groq";
+import { hf } from "./hf";
 
-export type AiProvider = "api" | "cli" | "hf" | "none";
+export type AiProvider = "api" | "cli" | "hf" | "groq" | "none";
+
+const COMPAT: Partial<Record<AiProvider, CompatProvider>> = { hf, groq };
 
 export const MODEL = process.env.CLAUDE_MODEL || "claude-opus-5-5";
 
@@ -27,18 +33,39 @@ async function hasCli(): Promise<boolean> {
   return cliAvailable;
 }
 
-export async function aiProvider(): Promise<AiProvider> {
-  if (process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN) return "api";
-  if (await hasCli()) return "cli";
-  if (hfToken()) return "hf";
-  return "none";
+/** Every configured provider, in the order they are tried. */
+export async function aiChain(): Promise<AiProvider[]> {
+  const out: AiProvider[] = [];
+  if (process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN) out.push("api");
+  else if (await hasCli()) out.push("cli");
+  if (hf.enabled()) out.push("hf");
+  if (groq.enabled()) out.push("groq");
+  return out;
 }
 
-/** Why the AI is not answering right now (e.g. Hugging Face credits ran out), or null. */
-export const aiIssue = (): string | null => hfIssue()?.message ?? null;
+/** The first configured provider (what the app tries first). */
+export async function aiProvider(): Promise<AiProvider> {
+  return (await aiChain())[0] ?? "none";
+}
+
+/** Why no AI answered, e.g. "DeepSeek (Hugging Face): credits have run out … Groq: rate limit reached …", or null. */
+export const aiIssue = (): string | null => {
+  const msgs = [hf, groq].filter((p) => p.enabled()).map((p) => p.issue()?.message).filter(Boolean);
+  return msgs.length ? msgs.join(" ") : null;
+};
 
 /** The model a provider uses (for status and labels). */
-export const modelFor = (p: AiProvider) => (p === "hf" ? HF_MODEL : MODEL);
+export const modelFor = (p: AiProvider) => COMPAT[p]?.model ?? MODEL;
+
+/** Checks one provider for the status page: an issue message, or null when it answers (Claude is not probed). */
+export async function probeProvider(p: AiProvider): Promise<string | null> {
+  const c = COMPAT[p];
+  return c ? ((await c.probe())?.message ?? null) : null;
+}
+
+/** Display name of a provider. */
+export const labelFor = (p: AiProvider) =>
+  p === "api" ? "Anthropic API" : p === "cli" ? "local Claude Code" : (COMPAT[p]?.label ?? "off");
 
 let client: Anthropic | null = null;
 const api = () => (client ??= new Anthropic());
@@ -141,7 +168,7 @@ export interface AiResult<T> {
   model: string;
 }
 
-/** Structured JSON from Claude, validated with zod. Returns null when no provider is available or output is invalid. */
+/** Structured JSON, validated with zod. Tries each configured provider in order; null when none gives valid output. */
 export async function aiJSON<T>(opts: {
   system: string;
   prompt: string;
@@ -149,69 +176,65 @@ export async function aiJSON<T>(opts: {
   jsonSchema: Record<string, unknown>;
   effort?: "low" | "medium" | "high";
 }): Promise<AiResult<T> | null> {
-  const provider = await aiProvider();
-  let raw: unknown = null;
-  if (provider === "api") {
-    const text = await apiCall({ system: opts.system, content: [{ type: "text", text: opts.prompt }], schema: opts.jsonSchema, effort: opts.effort });
-    if (text) {
-      try {
-        raw = JSON.parse(text);
-      } catch {
-        raw = null;
+  for (const provider of await aiChain()) {
+    let raw: unknown = null;
+    if (provider === "api") {
+      const text = await apiCall({ system: opts.system, content: [{ type: "text", text: opts.prompt }], schema: opts.jsonSchema, effort: opts.effort });
+      if (text) {
+        try {
+          raw = JSON.parse(text);
+        } catch {
+          raw = null;
+        }
       }
-    }
-  } else if (provider === "cli") {
-    const r = await cliCall({ system: opts.system, prompt: opts.prompt, schema: opts.jsonSchema });
-    raw = r.structured;
-    if (!raw && r.text) {
-      try {
-        raw = JSON.parse(r.text);
-      } catch {
-        raw = null;
+    } else if (provider === "cli") {
+      const r = await cliCall({ system: opts.system, prompt: opts.prompt, schema: opts.jsonSchema });
+      raw = r.structured;
+      if (!raw && r.text) {
+        try {
+          raw = JSON.parse(r.text);
+        } catch {
+          raw = null;
+        }
       }
+    } else {
+      raw = await COMPAT[provider]!.json({ system: opts.system, prompt: opts.prompt, jsonSchema: opts.jsonSchema });
     }
-  } else if (provider === "hf") {
-    raw = await hfJSON({ system: opts.system, prompt: opts.prompt, jsonSchema: opts.jsonSchema });
-  } else return null;
-  const parsed = opts.schema.safeParse(raw);
-  if (!parsed.success) {
+    const parsed = opts.schema.safeParse(raw);
+    if (parsed.success) return { data: parsed.data, provider, model: modelFor(provider) };
     if (raw) console.warn(`[${provider}] output failed validation:`, parsed.error.message.slice(0, 300));
-    return null;
   }
-  return { data: parsed.data, provider, model: modelFor(provider) };
+  return null;
 }
 
-/** Free text from Claude, optionally about local JPEG images (all in one directory). */
+/** Free text, optionally about local JPEG images (all in one directory). Tries each configured provider in order. */
 export async function aiText(opts: {
   system: string;
   prompt: string;
   imagePaths?: string[];
   effort?: "low" | "medium" | "high";
 }): Promise<AiResult<string> | null> {
-  const provider = await aiProvider();
   const images = opts.imagePaths ?? [];
-  if (provider === "api") {
-    const content: Anthropic.Beta.BetaContentBlockParam[] = [];
-    for (const p of images) {
-      const data = (await fs.readFile(p)).toString("base64");
-      content.push({ type: "text", text: `Image: ${path.basename(p)}` });
-      content.push({ type: "image", source: { type: "base64", media_type: "image/jpeg", data } });
+  for (const provider of await aiChain()) {
+    if (provider === "api") {
+      const content: Anthropic.Beta.BetaContentBlockParam[] = [];
+      for (const p of images) {
+        const data = (await fs.readFile(p)).toString("base64");
+        content.push({ type: "text", text: `Image: ${path.basename(p)}` });
+        content.push({ type: "image", source: { type: "base64", media_type: "image/jpeg", data } });
+      }
+      content.push({ type: "text", text: opts.prompt });
+      const text = await apiCall({ system: opts.system, content, effort: opts.effort });
+      if (text) return { data: text.trim(), provider, model: MODEL };
+    } else if (provider === "cli") {
+      const prompt = images.length ? `Use the Read tool to open these images: ${images.join(", ")}. Then: ${opts.prompt}` : opts.prompt;
+      const r = await cliCall({ system: opts.system, prompt, readDir: images.length ? path.dirname(images[0]) : undefined });
+      if (r.text) return { data: r.text.trim(), provider, model: MODEL };
+    } else {
+      if (images.length) continue; // DeepSeek and Groq are used text-only here; the Witness shows images without a note
+      const text = await COMPAT[provider]!.text({ system: opts.system, prompt: opts.prompt });
+      if (text) return { data: text, provider, model: modelFor(provider) };
     }
-    content.push({ type: "text", text: opts.prompt });
-    const text = await apiCall({ system: opts.system, content, effort: opts.effort });
-    return text ? { data: text.trim(), provider, model: MODEL } : null;
-  }
-  if (provider === "cli") {
-    const prompt = images.length
-      ? `Use the Read tool to open these images: ${images.join(", ")}. Then: ${opts.prompt}`
-      : opts.prompt;
-    const r = await cliCall({ system: opts.system, prompt, readDir: images.length ? path.dirname(images[0]) : undefined });
-    return r.text ? { data: r.text.trim(), provider, model: MODEL } : null;
-  }
-  if (provider === "hf") {
-    if (images.length) return null; // DeepSeek here is text-only; the Witness shows the images without a note
-    const text = await hfText({ system: opts.system, prompt: opts.prompt });
-    return text ? { data: text, provider, model: HF_MODEL } : null;
   }
   return null;
 }

@@ -15,7 +15,7 @@ export default async function ReportsPage() {
       <div className="grid g2" style={{ marginTop: 16 }}>
         <section>
           <h2>Case Files ({cases.length})</h2>
-          {cases.length === 0 && <div className="empty">No case reports yet. <Link href="/">Open a case</Link>.</div>}
+          {cases.length === 0 && <div className="empty">No case reports yet. <Link href="/">Research</Link>.</div>}
           <div className="grid">
             {cases.map((r) => (
               <div key={r.id} className="card">

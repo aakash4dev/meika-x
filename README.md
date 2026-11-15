@@ -104,7 +104,10 @@ MEIKA-X stores everything in **Supabase**: Postgres for data and Storage for ima
 1. If `ANTHROPIC_API_KEY` is set, it uses the Anthropic SDK (`claude-opus-5-5`, structured JSON output, server-side refusal fallbacks enabled). **A deployed site needs this.**
 2. Otherwise it uses your **local Claude Code CLI** (`claude -p --json-schema ...`, no tools except reading the case's two images). This is the default on a laptop where `claude` is installed and logged in.
 3. Otherwise, if `HF_TOKEN` is set, it uses **DeepSeek through Hugging Face Inference Providers** (`deepseek-ai/DeepSeek-V4.1-Flash` by default, `HF_MODEL` to change it). It asks for JSON matching the same schemas, and the same zod checks and number checks apply. DeepSeek is text-only here, so the Satellite Witness shows its images without a visual note.
-4. Otherwise AI features switch off and the fallbacks in the table above take over.
+4. Then, if `GROQ_API_KEY` is set, **Groq** (free tier, no credit card; `openai/gpt-oss-120b` by default, `GROQ_MODEL` to change it), with the same schemas and checks.
+5. Otherwise AI features switch off and the fallbacks in the table above take over.
+
+Each request tries the configured providers in this order and moves on when one fails, so a Hugging Face account out of credits falls through to Groq. When none answers, the case transcript, the chat and the status page say why (for example "credits have run out (HTTP 402)").
 
 ---
 
@@ -138,6 +141,7 @@ Requires Node.js 20+ (tested on 24) and Docker (for local Supabase).
 | `ANTHROPIC_API_KEY` | Claude through the API (needed when deployed) |
 | `CLAUDE_MODEL` | Default `claude-opus-5-5` |
 | `HF_TOKEN`, `HF_MODEL` | DeepSeek on Hugging Face, used when Claude is not available (e.g. on Vercel without an Anthropic key) |
+| `GROQ_API_KEY`, `GROQ_MODEL` | Groq (free tier), used after Claude and DeepSeek, or when they fail |
 | `CLAUDE_CLI` | `auto` (default) uses the local `claude` CLI when there is no API key; `off` disables it |
 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | Telegram alerts |
 | `MONITOR_INTERVAL_MINUTES` | Automatic monitoring interval while the server runs (default 60; `0` = off) |

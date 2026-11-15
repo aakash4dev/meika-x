@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
-import { aiProvider, modelFor } from "@/lib/ai/claude";
-import { hfProbe } from "@/lib/ai/hf";
+import { aiChain, labelFor, modelFor, probeProvider } from "@/lib/ai/claude";
 import { telegramEnabled } from "@/lib/telegram";
 import { firmsEnabled } from "@/lib/nasa/firms";
 import { schedulerInfo } from "@/lib/monitor/scheduler";
@@ -39,17 +38,24 @@ async function database() {
 }
 
 export async function GET() {
-  const [power, eonet, gibs, cmr, provider, dbStatus] = await Promise.all([
+  const [power, eonet, gibs, cmr, chain, dbStatus] = await Promise.all([
     ping("https://power.larc.nasa.gov/api/temporal/monthly/point?parameters=T2M&community=AG&longitude=77&latitude=28&start=2020&end=2020&format=JSON"),
     ping("https://eonet.gsfc.nasa.gov/api/v3/categories"),
     ping("https://gibs.earthdata.nasa.gov/wms/epsg4326/best/wms.cgi?SERVICE=WMS&REQUEST=GetCapabilities&VERSION=1.3.0"),
     ping("https://cmr.earthdata.nasa.gov/search/collections.json?page_size=1"),
-    aiProvider(),
+    aiChain().then((list) =>
+      Promise.all(list.map(async (p) => ({ provider: p, label: labelFor(p), model: modelFor(p), issue: await probeProvider(p) }))),
+    ),
     database(),
   ]);
   return NextResponse.json({
     nasa: { power, eonet, gibs, cmr, firms: firmsEnabled() ? "configured" : "no key" },
-    ai: { provider, model: modelFor(provider), issue: provider === "hf" ? ((await hfProbe())?.message ?? null) : null },
+    ai: (() => {
+      // the provider that answers first in the fallback order
+      const active = chain.find((c) => !c.issue);
+      const issue = active ? null : chain.map((c) => c.issue).filter(Boolean).join(" ") || null;
+      return { provider: active?.provider ?? "none", model: active?.model ?? modelFor("api"), issue, chain };
+    })(),
     database: dbStatus,
     telegram: telegramEnabled(),
     scheduler: schedulerInfo(),
