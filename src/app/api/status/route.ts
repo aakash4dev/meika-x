@@ -23,8 +23,15 @@ async function database() {
   const t = Date.now();
   const where = /127\.0\.0\.1|localhost/.test(SUPABASE_URL) ? "local" : "cloud";
   try {
-    const { error } = await db().from("cases").select("id", { count: "exact", head: true });
-    return { ok: !error, ms: Date.now() - t, where, error: error?.message };
+    // a real row read (a HEAD count can report success even when the table is missing)
+    const { error } = await db().from("case_summaries").select("id").limit(1);
+    const missing = error?.code === "PGRST205" || error?.code === "42P01";
+    return {
+      ok: !error,
+      ms: Date.now() - t,
+      where,
+      error: missing ? "Tables not found: run `npm run db:push` (or the SQL in supabase/migrations/) on this Supabase project." : error?.message,
+    };
   } catch (e) {
     return { ok: false, ms: Date.now() - t, where, error: (e as Error).message };
   }
