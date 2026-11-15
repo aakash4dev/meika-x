@@ -107,6 +107,8 @@ MEIKA-X stores everything in **Supabase**: Postgres for data and Storage for ima
 4. Then, if `GROQ_API_KEY` is set, **Groq** (free tier, no credit card; `openai/gpt-oss-120b` by default, `GROQ_MODEL` to change it), with the same schemas and checks.
 5. Otherwise AI features switch off and the fallbacks in the table above take over.
 
+**Which model runs where.** Claude Opus 5.5 (`claude-opus-5-5`) is our primary model; we built and tested MEIKA-X with it. Our hackathon AI credits are limited, so the public demo at meika-x.vercel.app runs on Groq's free tier (`openai/gpt-oss-120b`), with DeepSeek on Hugging Face as the other backup. The system page (`/system`) shows the order and which model is answering right now.
+
 Each request tries the configured providers in this order and moves on when one fails, so a Hugging Face account out of credits falls through to Groq. When none answers, the case transcript, the chat and the status page say why (for example "credits have run out (HTTP 402)").
 
 ---
@@ -228,9 +230,10 @@ tests/                    stats tests + reference fixtures (scipy, pymannkendall
 
 ## Use of SI (AI) — disclosure for the submission
 
-- **In the product:** Claude (`claude-opus-5-5`) plans cases from free-text questions, writes the bilingual brief from ledger rows only, writes the Satellite Witness visual note (labelled "AI observation") and optionally summarises new alerts. Every such output is marked in the UI and in the reports.
+- **In the product:** a language model plans cases from free-text questions, writes the brief (English plus the local language) from ledger rows only, writes the Satellite Witness visual note (labelled "AI observation") and optionally summarises new alerts. It is Claude (`claude-opus-5-5`) when available, otherwise DeepSeek on Hugging Face or Groq (`openai/gpt-oss-120b`). Every statistic comes from deterministic, unit-tested code; an automated check rejects any AI-written number that is not in the case ledger. AI output is marked in the UI and in the reports.
 - **In development:** an AI coding assistant (Claude) helped write code and documentation. The team reviewed the code and owns its design.
-- No AI-generated images. The 3D scene is built from code; the globe and snapshots are NASA imagery.
+- **Demo video:** the narration is an AI voice (Kokoro text-to-speech, run offline) and the title cards were made with AI assistance; the video carries an "AI-assisted video · AI voice" mark. The screen recordings show the real app.
+- No AI-generated images in the product. The 3D scene is built from code; the globe and snapshots are NASA imagery.
 
 
 

@@ -54,6 +54,39 @@ export default function SystemPage() {
         <li>Forecasts are analog climatology, not weather forecasts, and say so. Correlations are associations, not causes.</li>
       </ul>
 
+      <h2 style={{ marginTop: 28 }}>AI models we use, and why</h2>
+      <div className="card" style={{ maxWidth: 980 }}>
+        <table>
+          <tbody>
+            <tr>
+              <td style={{ width: 200, fontWeight: 600 }}>1. Claude Opus 5.5</td>
+              <td className="small muted">
+                <b>Our primary model</b> (<code>claude-opus-5-5</code>, by Anthropic). It plans each case, writes the brief in English and the local language, and
+                describes the satellite images. We built and tested MEIKA-X with it.
+              </td>
+            </tr>
+            <tr>
+              <td style={{ fontWeight: 600 }}>2. DeepSeek V4.1 Flash</td>
+              <td className="small muted">
+                Backup through Hugging Face Inference Providers (<code>deepseek-ai/DeepSeek-V4.1-Flash</code>), used when Claude is not available. Text only.
+              </td>
+            </tr>
+            <tr>
+              <td style={{ fontWeight: 600 }}>3. Groq (GPT-OSS 120B)</td>
+              <td className="small muted">
+                <b>What the public demo runs on.</b> Our hackathon AI credits are limited, so the hosted site falls back to Groq&apos;s free tier
+                (<code>openai/gpt-oss-120b</code>). Text only, so satellite images are shown without an AI description there.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        <p className="small muted" style={{ margin: "12px 0 0" }}>
+          Each request tries the models in this order and moves on when one fails (no credits, a bad key or a used-up free quota). Whatever answers, the
+          rules are the same: every number comes from deterministic, tested code, and an automated check rejects any AI-written number that is not in the case
+          ledger. If no model answers, the app still runs with built-in fallbacks and says so.
+        </p>
+      </div>
+
       <h2 style={{ marginTop: 28 }}>Integrations</h2>
       <SystemStatus />
     </main>

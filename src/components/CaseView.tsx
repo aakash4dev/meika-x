@@ -29,6 +29,35 @@ const AgentRoom = dynamic(() => import("./AgentRoom"), {
 const KIND_TAG: Partial<Record<TranscriptEvent["kind"], string>> = { plan: "plan", tool: "data", ledger: "ledger", handoff: "hand-off", verdict: "verdict", warn: "warning", done: "done" };
 const engineLabel = (e: string) => (e === "code" ? "deterministic code" : e === "ai" ? "our AI" : "code + our AI");
 
+/** The stages of a case, in order, for the live progress bar. */
+const STAGES = ["Plan", "NASA data + tests", "Skeptic", "Hazards", "Brief"];
+
+function stageOf(events: TranscriptEvent[]): number {
+  if (events.some((e) => e.agent === "narrator")) return 4;
+  if (events.some((e) => e.kind === "verdict" && e.agent === "chief")) return 3;
+  if (events.some((e) => e.agent === "skeptic")) return 2;
+  if (events.some((e) => e.kind === "plan")) return 1;
+  return 0;
+}
+
+/** What the active agent is busy with, from its last message. */
+function busyWith(last: TranscriptEvent | undefined, agent: AgentId | undefined): string {
+  if (last?.kind === "handoff" && agent !== last.agent) return "getting started";
+  if (last?.station === "claude" || /our AI/i.test(last?.text ?? "")) return "waiting for our AI to answer";
+  if (last?.station) return `fetching data from ${stationById(last.station).name}`;
+  const byAgent: Partial<Record<AgentId, string>> = {
+    chief: "deciding what to measure and where",
+    statistician: "measuring the trend",
+    witness: "checking satellite images and events",
+    driver: "testing possible drivers",
+    skeptic: "trying to break the finding",
+    forecaster: "estimating hazard odds",
+    exposure: "checking what is in the region",
+    narrator: "writing the brief",
+  };
+  return (agent && byAgent[agent]) || "working";
+}
+
 /** How long each step stays on stage, so walks to the terminals are visible. */
 const stepDelay = (e?: TranscriptEvent) => (!e ? 600 : e.station ? 2600 : e.kind === "verdict" ? 2000 : e.kind === "handoff" ? 900 : 1200);
 
@@ -43,6 +72,14 @@ export default function CaseView({ id }: { id: string }) {
   const [drawer, setDrawer] = useState(false);
   const [lang, setLang] = useState<"en" | "local">("en");
   const feedRef = useRef<HTMLDivElement>(null);
+  const [now, setNow] = useState(() => Date.now());
+
+  // a 1-second clock for the "thinking for Ns" counter, only while the case runs
+  useEffect(() => {
+    if (rec?.status !== "running") return;
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [rec?.status]);
 
   // poll the case while it runs
   useEffect(() => {
@@ -104,6 +141,16 @@ export default function CaseView({ id }: { id: string }) {
 
   const r = rec.results;
   const plan = rec.plan;
+  // live "thinking" state while the case runs and the feed has caught up
+  // follow the messages shown so far (playback runs a little behind the server), not the full record
+  const live = rec.status === "running";
+  const caughtUp = live && shown >= total;
+  const lastEv = events[events.length - 1];
+  // after a hand-off, the agent receiving the work is the one busy
+  const handoffTo = lastEv?.kind === "handoff" ? lastEv.target : undefined;
+  const busyAgent = ((caughtUp ? rec.activeAgent : undefined) ?? handoffTo ?? lastEv?.agent ?? "chief") as AgentId;
+  const busySecs = caughtUp && lastEv ? Math.max(0, Math.round((now - Date.parse(lastEv.ts)) / 1000)) : 0;
+  const stage = stageOf(events);
   const local = briefLocal(rec.brief);
   const done = rec.status !== "running" && !playing;
   const s = r.stats;
@@ -290,6 +337,25 @@ export default function CaseView({ id }: { id: string }) {
             );
           })}
           {events.length === 0 && <div className="muted small" style={{ padding: 10 }}>The Chief Detective is opening the case...</div>}
+          {caughtUp && (
+            <div className="cc-thinking" aria-live="polite">
+              <i style={{ background: agentById(busyAgent).color }} />
+              <div>
+                <span className="who" style={{ color: agentById(busyAgent).color }}>
+                  {agentById(busyAgent).name}
+                </span>
+                <div className="txt">
+                  is {busyWith(lastEv, busyAgent)}
+                  <span className="dots" aria-hidden>
+                    <b />
+                    <b />
+                    <b />
+                  </span>
+                  {busySecs >= 3 && <span className="secs">{busySecs}s</span>}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </section>
 
@@ -345,9 +411,20 @@ export default function CaseView({ id }: { id: string }) {
             {rec.status === "error" ? (
               <>Case stopped: {rec.error}</>
             ) : (
-              <>
-                <span className="spinner" /> The agents are investigating. Results appear here once the Skeptic has graded them.
-              </>
+              <div className="cc-progress">
+                <div className="cc-steps" role="list" aria-label="Case progress">
+                  {STAGES.map((label, i) => (
+                    <span key={label} role="listitem" className={`cc-step ${i < stage ? "done" : i === stage ? "on" : ""}`}>
+                      {i < stage ? "✓ " : ""}
+                      {label}
+                    </span>
+                  ))}
+                </div>
+                <div className="cc-busy">
+                  <span className="spinner" /> {agentById(busyAgent).name} is {busyWith(lastEv, busyAgent)}
+                  {busySecs >= 3 ? ` · ${busySecs}s` : ""}. Results appear here once the Skeptic has graded them.
+                </div>
+              </div>
             )}
           </div>
         )}
