@@ -228,14 +228,7 @@ tests/                    stats tests + reference fixtures (scipy, pymannkendall
 - **In development:** an AI coding assistant (Claude) helped write code and documentation. The team reviewed the code and owns its design.
 - No AI-generated images. The 3D scene is built from code; the globe and snapshots are NASA imagery.
 
-## Submission checklist (deadline Sun 15 Nov 2026, 11:59 PM IST)
 
-- [ ] Both members confirmed at the same Local Event (the team page showed *Award Ineligible* because both were waitlisted for Delhi)
-- [ ] Deployed site with a public link, plus this repo
-- [ ] Demo: at most 7 slides **or** a video of 30 seconds or less, public link, English
-- [ ] Project page: summary, description, NASA data (table above), partner data, SI disclosure (above)
-- [ ] No NASA logos in generated content; no images of anyone under 18
-- [ ] Click **Submit for Judging** and confirm the banner
 
 ## Credits and references
 

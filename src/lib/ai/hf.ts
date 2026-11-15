@@ -58,10 +58,12 @@ export async function hfJSON(opts: { system: string; prompt: string; jsonSchema:
     temperature: 0.2,
     response_format: { type: "json_schema", json_schema: { name: "result", schema: opts.jsonSchema, strict: true } },
   });
-  // some providers reject strict schemas; fall back to JSON mode, then to free text
-  if (!r.text && r.status >= 400 && r.status < 500 && r.status !== 401 && r.status !== 403) {
+  // some providers reject strict schemas (400/422): fall back to JSON mode, then to free text.
+  // Auth, billing and rate-limit errors (401/402/403/429) are not worth retrying.
+  const retryable = (st: number) => st === 400 || st === 404 || st === 422;
+  if (!r.text && retryable(r.status)) {
     r = await chat({ messages, max_tokens: 4000, temperature: 0.2, response_format: { type: "json_object" } });
-    if (!r.text && r.status >= 400 && r.status < 500 && r.status !== 401 && r.status !== 403) r = await chat({ messages, max_tokens: 4000, temperature: 0.2 });
+    if (!r.text && retryable(r.status)) r = await chat({ messages, max_tokens: 4000, temperature: 0.2 });
   }
   if (!r.text) {
     console.error(`[deepseek] request failed (${r.status}): ${r.error ?? "empty reply"}`);
