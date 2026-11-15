@@ -1,7 +1,7 @@
-// Fetch helper with a disk cache and a small concurrency limiter, shared by all NASA clients.
+// Fetch helper with a local disk cache (best effort; a temp folder on Vercel) and a small concurrency limiter, shared by all NASA clients.
 import crypto from "crypto";
 import { promises as fs } from "fs";
-import { dataPath, ensureDir } from "../store";
+import { ensureDir, localPath } from "../store";
 
 const UA = "MEIKA-X/0.1 (NASA Space Apps 2026 project)";
 
@@ -43,7 +43,7 @@ async function rawFetch(url: string, timeoutMs: number, retries: number): Promis
 
 function cacheFile(url: string, ext: string) {
   const h = crypto.createHash("sha1").update(url).digest("hex");
-  return dataPath("cache", `${h}.${ext}`);
+  return localPath("cache", `${h}.${ext}`);
 }
 
 async function fresh(file: string, ttl: number) {
@@ -62,7 +62,7 @@ export async function cachedJSON<T>(url: string, opts: CachedFetchOptions): Prom
     const res = await rawFetch(url, opts.timeoutMs ?? 60000, opts.retries ?? 2);
     if (!res.ok) throw new Error(`HTTP ${res.status} from ${new URL(url).host}: ${(await res.text()).slice(0, 200)}`);
     const data = (await res.json()) as T;
-    await ensureDir(dataPath("cache"));
+    await ensureDir(localPath("cache"));
     await fs.writeFile(file, JSON.stringify(data));
     return data;
   });
@@ -75,7 +75,7 @@ export async function cachedText(url: string, opts: CachedFetchOptions): Promise
     const res = await rawFetch(url, opts.timeoutMs ?? 60000, opts.retries ?? 2);
     if (!res.ok) throw new Error(`HTTP ${res.status} from ${new URL(url).host}`);
     const text = await res.text();
-    await ensureDir(dataPath("cache"));
+    await ensureDir(localPath("cache"));
     await fs.writeFile(file, text);
     return text;
   });
@@ -88,7 +88,7 @@ export async function cachedBinary(url: string, opts: CachedFetchOptions): Promi
     const res = await rawFetch(url, opts.timeoutMs ?? 60000, opts.retries ?? 2);
     if (!res.ok) throw new Error(`HTTP ${res.status} from ${new URL(url).host}`);
     const buf = Buffer.from(await res.arrayBuffer());
-    await ensureDir(dataPath("cache"));
+    await ensureDir(localPath("cache"));
     await fs.writeFile(file, buf);
     return buf;
   });

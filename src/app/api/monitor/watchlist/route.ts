@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { requireUser } from "@/lib/auth";
 import { addWatchItem, getAlerts, getMonitorState, getWatchlist, isMonitorRunning, removeWatchItem } from "@/lib/monitor/runner";
 import { schedulerInfo } from "@/lib/monitor/scheduler";
 import { telegramEnabled } from "@/lib/telegram";
@@ -22,10 +23,12 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
+  const user = await requireUser("change the watchlist");
+  if (user instanceof NextResponse) return user;
   try {
     const body = await req.json();
     if (!body.regionId && !validBBox(body.bbox)) return NextResponse.json({ error: "Pick a region or give a valid box (max 20 x 20 degrees)." }, { status: 400 });
-    const item = await addWatchItem(body);
+    const item = await addWatchItem(body, user.id);
     return NextResponse.json(item, { status: 201 });
   } catch (e) {
     return NextResponse.json({ error: (e as Error).message }, { status: 400 });
@@ -33,6 +36,8 @@ export async function POST(req: Request) {
 }
 
 export async function DELETE(req: Request) {
+  const user = await requireUser("change the watchlist");
+  if (user instanceof NextResponse) return user;
   const id = new URL(req.url).searchParams.get("id");
   if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
   await removeWatchItem(id);

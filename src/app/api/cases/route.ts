@@ -1,15 +1,18 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
+import { requireUser } from "@/lib/auth";
 import { createCase, runCase } from "@/lib/agents/pipeline";
-import { listCases } from "@/lib/agents/runtime";
+import { countRunningCases, listCases } from "@/lib/agents/runtime";
 import type { CaseRequest } from "@/lib/agents/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+// The case runs after the response is sent (after()), within this function's time limit.
+export const maxDuration = 300;
 
 export async function GET() {
-  const cases = await listCases();
+  const cases = await listCases(50);
   return NextResponse.json(
-    cases.slice(0, 50).map((c) => ({
+    cases.map((c) => ({
       id: c.id,
       question: c.question,
       status: c.status,
@@ -23,6 +26,8 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
+  const user = await requireUser("open a case");
+  if (user instanceof NextResponse) return user;
   let body: CaseRequest;
   try {
     body = (await req.json()) as CaseRequest;
@@ -32,9 +37,8 @@ export async function POST(req: Request) {
   if (typeof body.question !== "string" || !body.question.trim()) {
     return NextResponse.json({ error: "A question is required." }, { status: 400 });
   }
-  const running = (await listCases()).filter((c) => c.status === "running").length;
-  if (running >= 3) return NextResponse.json({ error: "Three cases are already running. Try again in a minute." }, { status: 429 });
-  const ctx = createCase(body);
-  void runCase(ctx, body);
+  if ((await countRunningCases()) >= 3) return NextResponse.json({ error: "Three cases are already running. Try again in a minute." }, { status: 429 });
+  const ctx = await createCase(body, user.id);
+  after(() => runCase(ctx, body));
   return NextResponse.json({ id: ctx.id }, { status: 201 });
 }

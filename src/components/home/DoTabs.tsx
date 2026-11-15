@@ -41,7 +41,7 @@ const COPY: Record<(typeof TABS)[number]["id"], { title: string; points: string[
   },
   file: {
     title: "Read a Case File you can check",
-    points: ["Grade A to D, trend per decade with its 95% interval", "Brief in English and Hindi, every number from the ledger", "Download the exact series as CSV, the report as Markdown"],
+    points: ["Grade A to D, trend per decade with its 95% interval", "Brief in English and the local language of the place, every number from the ledger", "Download the exact series as CSV, the report as Markdown"],
   },
   monitor: {
     title: "Keep watching after the case closes",

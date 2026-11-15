@@ -9,16 +9,25 @@
     "start": "next start",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test tests/*.test.ts",
-    "monitor": "tsx scripts/monitor-once.ts"
+    "monitor": "tsx --conditions=react-server scripts/monitor-once.ts",
+    "db:start": "supabase start",
+    "db:stop": "supabase stop",
+    "db:status": "supabase status",
+    "db:reset": "supabase db reset",
+    "db:import": "tsx --conditions=react-server scripts/import-local-data.ts",
+    "db:push": "supabase db push"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.8.0",
     "@react-three/drei": "^10.7.9",
     "@react-three/fiber": "^9.8.2",
+    "@supabase/ssr": "^0.12.7",
+    "@supabase/supabase-js": "^2.119.0",
     "marked": "^18.2.0",
     "next": "^16.4.6",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
+    "server-only": "^0.0.1",
     "three": "^0.187.0",
     "zod": "^4.6.7"
   },
@@ -27,6 +36,7 @@
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@types/three": "^0.187.0",
+    "supabase": "^3.1.0",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2"
   }

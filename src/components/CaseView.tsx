@@ -4,13 +4,16 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AGENTS, agentById, type AgentId } from "@/lib/agents/meta";
-import type { CaseRecord, Station, TranscriptEvent } from "@/lib/agents/types";
+import { briefLocal, type CaseRecord, type Station, type TranscriptEvent } from "@/lib/agents/types";
 import { bboxCenter } from "@/lib/catalog";
 import { fmt, fmtP, fmtSigned } from "@/lib/format";
 import { STATIONS, stationById } from "@/lib/stations";
 import OppositeMap from "./OppositeMap";
 import RichText from "./RichText";
 import SeriesChart from "./SeriesChart";
+
+/** Right-to-left scripts the Narrator may write in. */
+const RTL = new Set(["ar", "he", "fa", "ur", "ps"]);
 
 const AgentRoom = dynamic(() => import("./AgentRoom"), {
   ssr: false,
@@ -38,7 +41,7 @@ export default function CaseView({ id }: { id: string }) {
   const [near, setNear] = useState<Station | null>(null);
   const [walk, setWalk] = useState(false);
   const [drawer, setDrawer] = useState(false);
-  const [lang, setLang] = useState<"en" | "hi">("en");
+  const [lang, setLang] = useState<"en" | "local">("en");
   const feedRef = useRef<HTMLDivElement>(null);
 
   // poll the case while it runs
@@ -101,6 +104,7 @@ export default function CaseView({ id }: { id: string }) {
 
   const r = rec.results;
   const plan = rec.plan;
+  const local = briefLocal(rec.brief);
   const done = rec.status !== "running" && !playing;
   const s = r.stats;
   const h = r.forecast?.horizons[0];
@@ -369,10 +373,20 @@ export default function CaseView({ id }: { id: string }) {
               <div className="eyebrow">Narrator&apos;s brief</div>
               <div className="tabs">
                 <button className={`tab ${lang === "en" ? "on" : ""}`} onClick={() => setLang("en")}>English</button>
-                <button className={`tab ${lang === "hi" ? "on" : ""}`} onClick={() => setLang("hi")}>हिन्दी</button>
+                {local && (
+                  <button className={`tab ${lang === "local" ? "on" : ""}`} lang={local.code} onClick={() => setLang("local")}>
+                    {local.name}
+                  </button>
+                )}
               </div>
             </div>
-            <p className="brief">{rec.brief ? <RichText text={lang === "hi" ? rec.brief.hi ?? rec.brief.en : rec.brief.en} /> : "..."}</p>
+            {lang === "local" && local ? (
+              <p className="brief" lang={local.code} dir={RTL.has(local.code.split("-")[0]) ? "rtl" : undefined}>
+                <RichText text={local.text} />
+              </p>
+            ) : (
+              <p className="brief">{rec.brief ? <RichText text={rec.brief.en} /> : "..."}</p>
+            )}
             {rec.brief && (
               <p className="tiny muted">
                 Written by {rec.brief.provider === "template" ? "the fixed template" : "our AI"} from ledger rows only · number check{" "}

@@ -1,5 +1,6 @@
 "use client";
 
+import { needsLogin } from "@/lib/client/auth";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { AGENTS, agentById } from "@/lib/agents/meta";
@@ -60,6 +61,7 @@ export default function ChatRoom() {
       .map((m) => ({ role: m.kind === "user" ? ("user" as const) : ("assistant" as const), text: m.text }));
     try {
       const res = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question: text, history }) });
+      if (needsLogin(res)) return;
       const d = await res.json();
       if (!res.ok) throw new Error(d.error);
       push({ id: uid(), kind: "ai", text: d.answer, followups: d.followups ?? [], suggest: d.suggestCase?.question ?? null, verified: d.verified });
@@ -74,6 +76,7 @@ export default function ChatRoom() {
     setBusy(true);
     try {
       const res = await fetch("/api/cases", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question }) });
+      if (needsLogin(res)) return;
       const d = await res.json();
       if (!res.ok) throw new Error(d.error);
       const cardId = uid();

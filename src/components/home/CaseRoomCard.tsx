@@ -10,7 +10,10 @@ import { bboxCenter } from "@/lib/catalog";
 const AgentRoom = dynamic(() => import("../AgentRoom"), { ssr: false });
 
 /** A case shown as its own small lab. The room mounts when scrolled into view and replays the case while hovered. */
-export default function CaseRoomCard({ rec, index }: { rec: CaseRecord; index: number }) {
+/** What a room card needs: the plan, the verdict and the agents' trips to data terminals. */
+export type RoomCardCase = Pick<CaseRecord, "id" | "question" | "plan" | "transcript"> & { results: Pick<CaseRecord["results"], "grade" | "verdict"> };
+
+export default function CaseRoomCard({ rec, index }: { rec: RoomCardCase; index: number }) {
   const ref = useRef<HTMLAnchorElement>(null);
   const [visible, setVisible] = useState(false);
   const [hover, setHover] = useState(false);

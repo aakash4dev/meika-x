@@ -2,39 +2,135 @@
 import { REGIONS, regionById, type BBox } from "../catalog";
 import { aiText } from "../ai/claude";
 import { saveReport } from "../report";
-import { dataPath, newId, readJSON, writeJSON } from "../store";
+import { newId } from "../store";
+import { check, db } from "../supabase/admin";
 import { sendTelegram, telegramEnabled } from "../telegram";
 import { runChecks } from "./checks";
 import { DEFAULT_RULES, type Alert, type CheckResult, type MonitorState, type WatchItem, type WatchRules } from "./types";
 
-const WATCH_FILE = dataPath("watchlist.json");
-const ALERTS_FILE = dataPath("alerts.json");
-const STATE_FILE = dataPath("monitor-state.json");
-
 type G = typeof globalThis & { __meikaMonitorRunning?: boolean };
 const g = globalThis as G;
 
+// ------------------------------------------------------------------ storage (Supabase)
+
+type WatchRow = {
+  id: string;
+  name: string;
+  region_id: string | null;
+  bbox: BBox;
+  rules: WatchRules;
+  telegram: boolean;
+  last_run: string | null;
+  last_checks: CheckResult[] | null;
+  created_by?: string | null;
+  created_at: string;
+};
+
+const fromWatchRow = (r: WatchRow): WatchItem => ({
+  id: r.id,
+  name: r.name,
+  regionId: r.region_id ?? undefined,
+  bbox: r.bbox,
+  rules: r.rules,
+  telegram: r.telegram,
+  createdAt: r.created_at,
+  lastRun: r.last_run ?? undefined,
+  lastChecks: r.last_checks ?? undefined,
+});
+
+const toWatchRow = (w: WatchItem): Omit<WatchRow, "created_by"> => ({
+  id: w.id,
+  name: w.name,
+  region_id: w.regionId ?? null,
+  bbox: w.bbox,
+  rules: w.rules,
+  telegram: w.telegram,
+  last_run: w.lastRun ?? null,
+  last_checks: w.lastChecks ?? null,
+  created_at: w.createdAt,
+});
+
+type AlertRow = {
+  id: string;
+  item_id: string;
+  item_name: string;
+  rule: Alert["rule"];
+  level: Alert["level"];
+  message: string;
+  link: string | null;
+  key: string;
+  telegram: Alert["telegram"];
+  created_at: string;
+};
+
+const fromAlertRow = (r: AlertRow): Alert => ({
+  id: r.id,
+  itemId: r.item_id,
+  itemName: r.item_name,
+  rule: r.rule,
+  level: r.level,
+  message: r.message,
+  link: r.link ?? undefined,
+  key: r.key,
+  telegram: r.telegram,
+  createdAt: r.created_at,
+});
+
+const toAlertRow = (a: Alert): AlertRow => ({
+  id: a.id,
+  item_id: a.itemId,
+  item_name: a.itemName,
+  rule: a.rule,
+  level: a.level,
+  message: a.message,
+  link: a.link ?? null,
+  key: a.key,
+  telegram: a.telegram,
+  created_at: a.createdAt,
+});
+
+/** Starter watchlist for a fresh database: one region per inhabited continent. */
 function seedWatchlist(): WatchItem[] {
   const now = new Date().toISOString();
-  return ["delhi-ncr", "california", "se-australia", "central-europe", "east-africa"].map((id) => {
+  return ["california", "amazon", "central-europe", "east-africa", "delhi-ncr", "se-australia"].map((id) => {
     const r = regionById(id)!;
     return { id: newId("watch"), name: r.name, regionId: id, bbox: r.bbox, rules: structuredClone(DEFAULT_RULES), telegram: true, createdAt: now };
   });
 }
 
+type StoredState = MonitorState & { seeded?: boolean };
+
+async function readState(): Promise<StoredState> {
+  const data = check(await db().from("monitor_state").select("state").eq("id", 1).maybeSingle(), "read monitor state");
+  return { runs: 0, seenEvents: {}, alertKeys: {}, ...((data?.state as StoredState | undefined) ?? {}) };
+}
+
+async function writeState(state: StoredState) {
+  check(await db().from("monitor_state").upsert({ id: 1, state, updated_at: new Date().toISOString() }), "save monitor state");
+}
+
 export async function getWatchlist(): Promise<WatchItem[]> {
-  const list = await readJSON<WatchItem[] | null>(WATCH_FILE, null);
-  if (list) return list;
+  const data = check(await db().from("watchlist").select("*").order("created_at", { ascending: true }), "read watchlist");
+  if (data?.length) return data.map((r) => fromWatchRow(r as WatchRow));
+  // Seed once per database; after that an empty watchlist means the team removed everything.
+  const state = await readState();
+  if (state.seeded) return [];
   const seeded = seedWatchlist();
-  await writeJSON(WATCH_FILE, seeded);
+  check(await db().from("watchlist").insert(seeded.map(toWatchRow)), "seed watchlist");
+  await writeState({ ...state, seeded: true });
   return seeded;
 }
 
+/** Saves run results (last run and checks) for every item in the list. */
 export async function saveWatchlist(list: WatchItem[]) {
-  await writeJSON(WATCH_FILE, list);
+  if (!list.length) return;
+  check(await db().from("watchlist").upsert(list.map(toWatchRow)), "save watchlist");
 }
 
-export async function addWatchItem(input: { name?: string; regionId?: string; bbox?: BBox; rules?: Partial<WatchRules>; telegram?: boolean }) {
+export async function addWatchItem(
+  input: { name?: string; regionId?: string; bbox?: BBox; rules?: Partial<WatchRules>; telegram?: boolean },
+  userId: string | null = null,
+) {
   const region = input.regionId ? regionById(input.regionId) : undefined;
   const bbox = region?.bbox ?? input.bbox;
   if (!bbox) throw new Error("A region or a bounding box is required.");
@@ -48,23 +144,22 @@ export async function addWatchItem(input: { name?: string; regionId?: string; bb
     telegram: input.telegram ?? true,
     createdAt: new Date().toISOString(),
   };
-  const list = await getWatchlist();
-  list.push(item);
-  await saveWatchlist(list);
+  check(await db().from("watchlist").insert({ ...toWatchRow(item), created_by: userId }), "add watch item");
   return item;
 }
 
 export async function removeWatchItem(id: string) {
-  const list = await getWatchlist();
-  await saveWatchlist(list.filter((w) => w.id !== id));
+  check(await db().from("watchlist").delete().eq("id", id), "remove watch item");
 }
 
 export async function getAlerts(limit = 200): Promise<Alert[]> {
-  return (await readJSON<Alert[]>(ALERTS_FILE, [])).slice(0, limit);
+  const data = check(await db().from("alerts").select("*").order("created_at", { ascending: false }).limit(limit), "read alerts");
+  return (data ?? []).map((r) => fromAlertRow(r as AlertRow));
 }
 
 export async function getMonitorState(): Promise<MonitorState> {
-  return readJSON<MonitorState>(STATE_FILE, { runs: 0, seenEvents: {}, alertKeys: {} });
+  const { seeded: _s, ...state } = await readState();
+  return state;
 }
 
 export const isMonitorRunning = () => Boolean(g.__meikaMonitorRunning);
@@ -79,8 +174,7 @@ export async function runMonitor(trigger: string) {
   const today = started.toISOString().slice(0, 10);
   try {
     const list = await getWatchlist();
-    const state = await getMonitorState();
-    const alerts = await readJSON<Alert[]>(ALERTS_FILE, []);
+    const state = await readState();
     const newAlerts: Alert[] = [];
     const sections: string[] = [];
 
@@ -179,8 +273,7 @@ export async function runMonitor(trigger: string) {
       }
     }
 
-    alerts.unshift(...newAlerts);
-    await writeJSON(ALERTS_FILE, alerts.slice(0, 1000));
+    if (newAlerts.length) check(await db().from("alerts").insert(newAlerts.map(toAlertRow)), "save alerts");
     await saveWatchlist(list);
     state.lastRun = started.toISOString();
     state.lastTrigger = trigger;
@@ -189,7 +282,7 @@ export async function runMonitor(trigger: string) {
     // forget alert keys older than 14 days
     const cutoff = Date.now() - 14 * 86400000;
     for (const [k, v] of Object.entries(state.alertKeys)) if (Date.parse(v) < cutoff) delete state.alertKeys[k];
-    await writeJSON(STATE_FILE, state);
+    await writeState(state);
 
     const md =
       `# Monitoring report, ${started.toUTCString()}\n\n*Trigger: ${trigger} · ${list.length} watched regions · ${newAlerts.length} new alerts*\n\n` +
@@ -207,9 +300,13 @@ export async function runMonitor(trigger: string) {
     });
     return { skipped: false as const, alerts: newAlerts, reportId: rep.id, items: list.length };
   } catch (e) {
-    const state = await getMonitorState();
-    state.lastError = (e as Error).message;
-    await writeJSON(STATE_FILE, state);
+    try {
+      const state = await readState();
+      state.lastError = (e as Error).message;
+      await writeState(state);
+    } catch {
+      /* the database itself may be what failed */
+    }
     throw e;
   } finally {
     g.__meikaMonitorRunning = false;

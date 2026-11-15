@@ -1,4 +1,5 @@
 // One monitoring run from the command line (for system cron): npm run monitor
+import "./load-env";
 import { runMonitor } from "../src/lib/monitor/runner";
 
 runMonitor("cli")

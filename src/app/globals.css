@@ -36,7 +36,6 @@
   --chart-text: #8a8278;
   --chart-raw: #cbc3b7;
   --chart-mean: #1d1a17;
-  --chart-trend: #e2671c;
   color-scheme: light;
 }
 
@@ -207,8 +206,6 @@ tr:last-child td { border-bottom: none; }
 .chart-text { fill: var(--chart-text); font-family: var(--font-mono); }
 .chart-raw { stroke: var(--chart-raw); }
 .chart-mean { stroke: var(--chart-mean); }
-.chart-trend { stroke: var(--chart-trend); }
-.chart-band { fill: var(--chart-trend); opacity: 0.16; }
 .chart-zero { stroke: var(--line-strong); }
 
 .mapbox { position: relative; width: 100%; border-radius: var(--radius); overflow: hidden; border: 1px solid var(--line); background: #000; }
@@ -496,3 +493,26 @@ html { scroll-behavior: smooth; }
 @keyframes snip { 0% { opacity: 0; transform: translateY(6px); } 6% { opacity: 1; transform: none; } 32% { opacity: 1; transform: none; } 40% { opacity: 0; transform: translateY(-4px); } 100% { opacity: 0; } }
 .lp-treehead { text-align: center; margin-bottom: 18px; }
 .lp-treehead h2 { margin-left: auto; margin-right: auto; }
+
+/* ---------------------------------------------------------------- accounts */
+.auth-page { display: grid; place-items: start center; padding-top: 8vh; }
+.auth-card, .auth-stack { width: 100%; max-width: 420px; }
+.auth-stack { display: grid; gap: 16px; }
+.auth-card h1, .auth-stack h1 { font-family: var(--font-head); font-size: 1.6rem; margin: 2px 0 12px; }
+.auth-email { word-break: break-all; font-size: 1.25rem !important; }
+.auth-card label, .auth-stack label { display: block; font-size: 0.82rem; font-weight: 600; margin-bottom: 4px; color: var(--muted); }
+.auth-submit { width: 100%; justify-content: center; margin-top: 4px; }
+.auth-msg { margin: 0 0 12px; padding: 9px 12px; border-radius: var(--radius-sm); font-size: 0.86rem; }
+.auth-msg.err { background: rgba(217, 58, 63, 0.08); color: var(--alert); }
+.auth-msg.ok { background: rgba(31, 157, 106, 0.1); color: var(--ok); }
+.auth-links { margin-top: 12px; text-align: center; }
+.auth-highlight { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(226, 103, 28, 0.15); }
+.linkish { background: none; border: 0; padding: 0; font: inherit; color: var(--link); cursor: pointer; }
+.linkish:hover { text-decoration: underline; }
+.rail a.item .avatar { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; background: var(--accent); color: var(--accent-ink); font-size: 11px; font-weight: 700; text-transform: uppercase; }
+.auth-demo { margin: 4px 0 14px; }
+.auth-demo .tiny { margin: 6px 0 0; text-align: center; }
+.auth-or { display: flex; align-items: center; gap: 10px; margin: 14px 0 2px; color: var(--dim); font-size: 0.78rem; }
+.auth-or::before, .auth-or::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+.btn.demo { background: var(--text); border-color: var(--text); color: #fff; }
+.btn.demo:hover { background: #000; }

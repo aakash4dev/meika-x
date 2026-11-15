@@ -1,15 +1,13 @@
-import { promises as fs } from "fs";
-import { dataPath } from "@/lib/store";
+import { db } from "@/lib/supabase/admin";
+import { CASE_IMAGES_BUCKET } from "@/lib/supabase/env";
 
 export const runtime = "nodejs";
 
+/** Satellite snapshot of a case, served from Supabase Storage under a stable same-origin URL. */
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string; name: string }> }) {
   const { id, name } = await params;
   if (!/^[\w-]+$/.test(id) || !["recent", "prior"].includes(name)) return new Response("Not found", { status: 404 });
-  try {
-    const buf = await fs.readFile(dataPath("cases", id, `${name}.jpg`));
-    return new Response(new Uint8Array(buf), { headers: { "Content-Type": "image/jpeg", "Cache-Control": "public, max-age=86400" } });
-  } catch {
-    return new Response("Not found", { status: 404 });
-  }
+  const { data, error } = await db().storage.from(CASE_IMAGES_BUCKET).download(`${id}/${name}.jpg`);
+  if (error || !data) return new Response("Not found", { status: 404 });
+  return new Response(data, { headers: { "Content-Type": "image/jpeg", "Cache-Control": "public, max-age=86400, immutable" } });
 }

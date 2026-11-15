@@ -3,7 +3,9 @@ import { promises as fs } from "fs";
 import { aiText } from "../ai/claude";
 import { eventsUrl, fetchEvents } from "../nasa/eonet";
 import { TRUE_COLOR, snapshot, worldviewUrl } from "../nasa/gibs";
-import { dataPath, ensureDir } from "../store";
+import { ensureDir, localPath } from "../store";
+import { db } from "../supabase/admin";
+import { CASE_IMAGES_BUCKET } from "../supabase/env";
 import type { CaseContext } from "./runtime";
 import type { WitnessResult } from "./types";
 
@@ -18,7 +20,8 @@ export async function runWitness(ctx: CaseContext) {
   const result: WitnessResult = { recentDate: isoDay(recent), priorDate: isoDay(prior), images: [], events: [] };
   ctx.rec.results.witness = result;
 
-  const dir = dataPath("cases", ctx.id);
+  // local copies for the AI vision step (the CLI reads files); the durable copy goes to Supabase Storage
+  const dir = localPath("cases", ctx.id);
   const shotLinks: string[] = [];
   await ensureDir(dir);
   const files: string[] = [];
@@ -28,6 +31,8 @@ export async function runWitness(ctx: CaseContext) {
       const file = `${dir}/${name}.jpg`;
       await fs.writeFile(file, buf);
       files.push(file);
+      const up = await db().storage.from(CASE_IMAGES_BUCKET).upload(`${ctx.id}/${name}.jpg`, buf, { contentType: "image/jpeg", upsert: true });
+      if (up.error) throw new Error(`could not store the image: ${up.error.message}`);
       shotLinks.push(
         `${ctx.source("witness", "gibs", `NASA GIBS MODIS Terra true colour, ${date}`, url)} ([Worldview](${worldviewUrl(TRUE_COLOR, plan.bbox, date)}))`,
       );

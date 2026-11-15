@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { requireUser } from "@/lib/auth";
 import { askOurAI, type ChatTurn } from "@/lib/chat";
 
 export const runtime = "nodejs";
@@ -6,6 +7,8 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 
 export async function POST(req: Request) {
+  const user = await requireUser("chat with Our AI");
+  if (user instanceof NextResponse) return user;
   let body: { question?: string; history?: ChatTurn[] };
   try {
     body = await req.json();

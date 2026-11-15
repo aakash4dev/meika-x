@@ -1,5 +1,5 @@
 import type { AgentId } from "./meta";
-import type { BBox, Hazard } from "../catalog";
+import type { BBox, Hazard, LocalLanguage } from "../catalog";
 
 export type { AgentId };
 
@@ -56,6 +56,8 @@ export interface CasePlan {
   hazard: Hazard;
   rationale: string;
   plannedBy: "claude" | "rules" | "user";
+  /** Main local language of the place (none when English). The brief gets a second version in it. */
+  lang?: LocalLanguage | null;
 }
 
 export interface SeriesForChart {
@@ -169,6 +171,9 @@ export interface ExposureResult {
 
 export interface CaseBrief {
   en: string;
+  /** The same brief in the region's main local language. */
+  local?: LocalLanguage & { text: string };
+  /** Hindi brief from cases written before briefs became multilingual. */
   hi?: string;
   provider: "api" | "cli" | "template";
   checked: boolean;
@@ -213,4 +218,12 @@ export interface CaseRequest {
   regionId?: string;
   bbox?: BBox;
   startYear?: number;
+}
+
+/** The brief's second-language version, if any (handles cases saved before briefs became multilingual). */
+export function briefLocal(brief: CaseBrief | undefined): (LocalLanguage & { text: string }) | null {
+  if (!brief) return null;
+  if (brief.local?.text) return brief.local;
+  if (brief.hi) return { code: "hi", name: "हिन्दी", text: brief.hi };
+  return null;
 }

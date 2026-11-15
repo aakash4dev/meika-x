@@ -9,10 +9,11 @@ import type { CaseContext } from "./runtime";
 import type { CasePlan, CaseRequest } from "./types";
 
 const BoxSchema = z.object({ west: z.number(), south: z.number(), east: z.number(), north: z.number() });
+const LangSchema = z.object({ code: z.string().min(2).max(12), name: z.string().min(1) });
 const PlanSchema = z.object({
   variable: z.string(),
   regionId: z.string().nullable(),
-  customRegion: z.object({ name: z.string(), bbox: BoxSchema }).nullable(),
+  customRegion: z.object({ name: z.string(), bbox: BoxSchema, language: LangSchema.nullable() }).nullable(),
   startYear: z.number().int().nullable(),
   rationale: z.string(),
 });
@@ -35,8 +36,20 @@ const PLAN_JSON_SCHEMA = {
               required: ["west", "south", "east", "north"],
               additionalProperties: false,
             },
+            language: {
+              description: "The place's main local language when it is not English, else null. code = BCP-47 (e.g. 'ne'), name = the language's own name for itself (e.g. 'नेपाली').",
+              anyOf: [
+                {
+                  type: "object",
+                  properties: { code: { type: "string" }, name: { type: "string" } },
+                  required: ["code", "name"],
+                  additionalProperties: false,
+                },
+                { type: "null" },
+              ],
+            },
           },
-          required: ["name", "bbox"],
+          required: ["name", "bbox", "language"],
           additionalProperties: false,
         },
         { type: "null" },
@@ -54,7 +67,7 @@ const SYSTEM = `You are the Chief Detective of MEIKA-X, a tool that helps studen
 Turn the user's question into a case plan:
 - Pick exactly one variable id from the catalogue that best measures what the question is about.
 - If the question names or implies a place in the region list, use its id.
-- If it names a place that is not in the list, set regionId to null and give customRegion: the place name and a bounding box that covers it (decimal degrees, at most 20 x 20 degrees, west < east, south < north).
+- MEIKA-X covers the whole planet. If the question names a place that is not in the list, do NOT substitute a nearby listed region: set regionId to null and give customRegion with the place name, a bounding box that covers it (decimal degrees, at most 20 x 20 degrees, west < east, south < north) and its main local language (null if English).
 - If the question asks about the future or "current updates", still plan a trend test on the past record; say in the rationale that MEIKA-X tests past change and gives climatological odds, not forecasts or news.
 Never invent variable or region ids. Never state numbers or findings: you have not seen the data. Keep the rationale to one or two short sentences a 16-year-old can follow.`;
 
@@ -78,12 +91,14 @@ function matchRegion(question: string) {
   const aliases: Record<string, string[]> = {
     "us-corn-belt": ["corn belt", "iowa", "illinois", "midwest"],
     california: ["california", "central valley"],
+    "central-america": ["central america", "dry corridor", "guatemala", "honduras", "el salvador", "nicaragua"],
     amazon: ["amazon", "brazil", "rainforest"],
     patagonia: ["patagonia", "argentina", "chile"],
     "central-europe": ["europe", "germany", "czech", "poland", "austria"],
     iberia: ["spain", "portugal", "iberia", "mediterranean"],
     sahel: ["sahel", "niger", "mali", "burkina", "chad"],
     "east-africa": ["kenya", "ethiopia", "somalia", "horn of africa", "east africa"],
+    "southern-africa": ["southern africa", "zambia", "zimbabwe", "botswana", "malawi"],
     "nile-delta": ["egypt", "nile", "cairo"],
     "middle-east-gulf": ["gulf", "dubai", "uae", "qatar", "saudi", "arabia"],
     "delhi-ncr": ["delhi", "ncr", "gurgaon", "noida", "gurugram"],
@@ -91,9 +106,11 @@ function matchRegion(question: string) {
     "india-monsoon": ["central india", "monsoon belt", "india"],
     "north-china-plain": ["china", "beijing", "hebei", "shandong"],
     "mekong-delta": ["mekong", "vietnam"],
+    borneo: ["borneo", "kalimantan", "indonesia", "sarawak"],
     "se-australia": ["australia", "new south wales", "victoria", "sydney", "melbourne"],
     "alaska-north-slope": ["arctic", "alaska", "tundra"],
     siberia: ["siberia", "yakutia", "russia", "permafrost"],
+    "greenland-west": ["greenland", "ice sheet"],
   };
   for (const [id, words] of Object.entries(aliases)) if (words.some((w) => q.includes(w))) return regionById(id) ?? null;
   return null;
@@ -104,7 +121,7 @@ export async function planCase(ctx: CaseContext, req: CaseRequest): Promise<Case
 
   let variableId = req.variable && variableById(req.variable) ? req.variable : undefined;
   let regionId = req.regionId && regionById(req.regionId) ? req.regionId : undefined;
-  let custom: { name: string; bbox: CasePlan["bbox"] } | undefined = validBBox(req.bbox) ? { name: "", bbox: req.bbox } : undefined;
+  let custom: { name: string; bbox: CasePlan["bbox"]; language?: CasePlan["lang"] } | undefined = validBBox(req.bbox) ? { name: "", bbox: req.bbox } : undefined;
   let startYear = req.startYear;
   let rationale = "";
   let plannedBy: CasePlan["plannedBy"] = variableId && (regionId || req.bbox) ? "user" : "rules";
@@ -170,6 +187,8 @@ export async function planCase(ctx: CaseContext, req: CaseRequest): Promise<Case
     hazard: variable.hazard,
     rationale: rationale || `${variable.name} over ${regionName}, as requested.`,
     plannedBy,
+    // listed region: its language; AI-planned custom place: the language the AI named; a raw bbox: let the Narrator decide
+    lang: region ? (region.lang ?? null) : custom ? custom.language : (regionById(DEFAULT_REGION_ID)!.lang ?? null),
   };
   ctx.rec.plan = plan;
   ctx.rec.results.dataset = variable.source;

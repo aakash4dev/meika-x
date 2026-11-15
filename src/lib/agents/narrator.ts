@@ -1,4 +1,4 @@
-// Narrator: writes the Case File brief (English and Hindi) from ledger rows only.
+// Narrator: writes the Case File brief (English plus the region's main local language) from ledger rows only.
 // An automated check rejects any number in the text that does not appear in the ledger or the plan.
 import { z } from "zod";
 import { aiJSON } from "../ai/claude";
@@ -6,14 +6,32 @@ import { fmt, fmtP, fmtSigned } from "../format";
 import type { CaseContext } from "./runtime";
 import type { CaseBrief, CaseRecord } from "./types";
 
-const BriefSchema = z.object({ en: z.string().min(40), hi: z.string().min(20) });
+const BriefSchema = z.object({
+  en: z.string().min(40),
+  local: z.object({ code: z.string().min(2).max(12), name: z.string().min(1), text: z.string().min(20) }).nullable(),
+});
 const BRIEF_JSON_SCHEMA = {
   type: "object",
   properties: {
     en: { type: "string", description: "English brief, 120-180 words" },
-    hi: { type: "string", description: "Hindi brief in Devanagari script, same content, Western digits" },
+    local: {
+      description: "The same brief in the region's main local language (Western digits), or null when that language is English",
+      anyOf: [
+        {
+          type: "object",
+          properties: {
+            code: { type: "string", description: "BCP-47 language code, e.g. 'es'" },
+            name: { type: "string", description: "The language's own name for itself, e.g. 'Español'" },
+            text: { type: "string" },
+          },
+          required: ["code", "name", "text"],
+          additionalProperties: false,
+        },
+        { type: "null" },
+      ],
+    },
   },
-  required: ["en", "hi"],
+  required: ["en", "local"],
   additionalProperties: false,
 };
 
@@ -24,9 +42,9 @@ Hard rules:
 - Correlations with drivers are associations, never causes. Do not attribute single events to climate change.
 - If the grade is D, say plainly that no trend could be distinguished from noise yet, and give the years-needed figure if present.
 - Plain language, short sentences, no headings, no bullet points, no markdown.
-- Write an English version and a Hindi version (Devanagari script) with the same content; in Hindi keep numbers in Western digits exactly as given.
+- Write an English version, and a second version with the same content in the local language named in the input (set local to null when told English only). In every language keep numbers in Western digits (0-9) exactly as given.
 - Cite the data inline: when you mention the record, the satellite images, events or fires, turn the words into a markdown link using ONLY the links listed under "Links you may use", copied exactly, for example [NASA POWER monthly data](url). Use each link at most once per language, and never invent a URL.
-- End both versions with one sentence saying this is an advisory analysis, not an official warning.`;
+- End every version with one sentence saying this is an advisory analysis, not an official warning.`;
 
 /** Markdown links are allowed in the brief; their URLs are not prose, so drop them before checking numbers. */
 const stripLinks = (t: string) => t.replace(/\[([^\]]*)\]\([^)]*\)/g, "$1");
@@ -56,6 +74,13 @@ export function checkBrief(rec: CaseRecord, text: string): string[] {
   return [...new Set(numbersIn(text).filter((n) => !allowed.has(n)))];
 }
 
+function languageLine(rec: CaseRecord) {
+  const lang = rec.plan!.lang;
+  if (lang) return `Local language: ${lang.name} (code ${lang.code}). Write the second version in it.`;
+  if (lang === null) return "Local language: English only. Set local to null.";
+  return `Local language: not known. If the main local language of ${rec.plan!.regionName} is not English, write the second version in it; otherwise set local to null.`;
+}
+
 function ledgerDigest(rec: CaseRecord) {
   const plan = rec.plan!;
   const rows = rec.ledger.map((r) => `${r.key} | ${r.label} | ${r.display}${r.unit ? ` ${r.unit}` : ""}`).join("\n");
@@ -63,6 +88,7 @@ function ledgerDigest(rec: CaseRecord) {
 Plan: ${plan.variableName} (${plan.units}) over ${plan.regionName}, ${plan.startYear} to ${plan.endYear}. Data: ${rec.results.dataset}.
 Grade reason: ${rec.results.gradeReason ?? "n/a"}
 Opposite-story flag: ${rec.results.map?.opposite ? "raised" : "not raised"}
+${languageLine(rec)}
 
 Ledger rows (key | label | display):
 ${rows}
@@ -97,7 +123,15 @@ function onlyKnownLinks(rec: CaseRecord, text: string) {
   return text.replace(/\[([^\]]*)\]\(([^)]*)\)/g, (m, label, url) => (allowed.has(url) ? m : label));
 }
 
-export function templateBrief(rec: CaseRecord): { en: string; hi: string } {
+const HINDI = { code: "hi", name: "हिन्दी" };
+
+/** Fixed fallback brief. Has an English and a Hindi template; other languages get English only. */
+export function templateBrief(rec: CaseRecord): { en: string; local?: CaseBrief["local"] } {
+  const t = templateTexts(rec);
+  return { en: t.en, local: rec.plan!.lang?.code === "hi" ? { ...HINDI, text: t.hi } : undefined };
+}
+
+function templateTexts(rec: CaseRecord): { en: string; hi: string } {
   const plan = rec.plan!;
   const s = rec.results.stats;
   const g = rec.results.grade ?? "D";
@@ -148,9 +182,16 @@ export async function runNarrator(ctx: CaseContext) {
       effort: "medium",
     });
     if (!ai) break;
-    const unmatched = checkBrief(rec, `${ai.data.en}\n${ai.data.hi}`);
+    const local = ai.data.local && rec.plan!.lang !== null ? ai.data.local : null;
+    const unmatched = checkBrief(rec, `${ai.data.en}\n${local?.text ?? ""}`);
     if (unmatched.length === 0) {
-      brief = { en: onlyKnownLinks(rec, ai.data.en), hi: onlyKnownLinks(rec, ai.data.hi), provider: ai.provider as "api" | "cli", checked: true, unmatched: [] };
+      brief = {
+        en: onlyKnownLinks(rec, ai.data.en),
+        local: local ? { code: local.code, name: local.name, text: onlyKnownLinks(rec, local.text) } : undefined,
+        provider: ai.provider as "api" | "cli",
+        checked: true,
+        unmatched: [],
+      };
     } else {
       await ctx.emit("narrator", "warn", `Number check failed for ${unmatched.join(", ")}. Rewriting.`);
       feedback = `\n\nYour previous draft used numbers that are not in the ledger: ${unmatched.join(", ")}. Remove them or replace them with ledger values.`;
@@ -158,7 +199,7 @@ export async function runNarrator(ctx: CaseContext) {
   }
   if (!brief) {
     const t = templateBrief(rec);
-    brief = { en: t.en, hi: t.hi, provider: "template", checked: checkBrief(rec, `${t.en}\n${t.hi}`).length === 0, unmatched: [] };
+    brief = { en: t.en, local: t.local, provider: "template", checked: checkBrief(rec, `${t.en}\n${t.local?.text ?? ""}`).length === 0, unmatched: [] };
     await ctx.emit("narrator", "say", "Our AI was unavailable or failed the number check, so I used the fixed template.");
   }
   rec.brief = brief;

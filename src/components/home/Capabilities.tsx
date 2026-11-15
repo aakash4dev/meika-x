@@ -34,7 +34,7 @@ export default function Capabilities() {
   const term = q.trim().toLowerCase();
   return (
     <div>
-      <input className="lp-search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search capabilities, e.g. significance, fire, Hindi..." aria-label="Search capabilities" />
+      <input className="lp-search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search capabilities, e.g. significance, fire, language..." aria-label="Search capabilities" />
       <div className="lp-capgrid">
         {GROUPS.map((g) => {
           const items = g.items.filter((i) => !term || i.toLowerCase().includes(term) || g.title.toLowerCase().includes(term));

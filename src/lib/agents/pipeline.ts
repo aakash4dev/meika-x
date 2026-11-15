@@ -13,7 +13,8 @@ import { loadData, runStatistician } from "./statistician";
 import { runWitness } from "./witness";
 import type { CaseRecord, CaseRequest } from "./types";
 
-export function createCase(req: CaseRequest): CaseContext {
+/** Creates the case and saves it before returning, so any server instance can serve its page. */
+export async function createCase(req: CaseRequest, userId: string | null): Promise<CaseContext> {
   const now = new Date().toISOString();
   const rec: CaseRecord = {
     id: newId("case"),
@@ -26,7 +27,9 @@ export function createCase(req: CaseRequest): CaseContext {
     sources: [],
     results: {},
   };
-  return new CaseContext(rec);
+  const ctx = new CaseContext(rec, userId);
+  await ctx.flush();
+  return ctx;
 }
 
 export async function runCase(ctx: CaseContext, req: CaseRequest) {
@@ -54,6 +57,7 @@ export async function runCase(ctx: CaseContext, req: CaseRequest) {
       markdown: caseMarkdown(ctx.rec),
       caseId: ctx.id,
       grade: ctx.rec.results.grade,
+      userId: ctx.userId,
     });
     ctx.rec.reportId = rep.id;
     await ctx.emit("chief", "done", "The trial is over. The Case File and report are ready.");

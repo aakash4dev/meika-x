@@ -12,6 +12,7 @@ interface Status {
   nasa: { power: Ping; eonet: Ping; gibs: Ping; cmr: Ping; firms: string };
   ai: { provider: "api" | "cli" | "none"; model: string };
   telegram: boolean;
+  database: { ok: boolean; ms: number; where: "local" | "cloud"; error?: string };
   scheduler: { intervalMin: number; startedAt: string } | null;
 }
 
@@ -35,13 +36,18 @@ export default function SystemStatus() {
     [
       "Claude",
       <span key="a" className={`pill ${s.ai.provider === "none" ? "na" : "ai"}`}>{s.ai.provider === "api" ? "Anthropic API" : s.ai.provider === "cli" ? "local Claude Code" : "off"}</span>,
-      `${s.ai.model} · planning, narration (EN/HI), visual notes, alert digests. ${s.ai.provider === "none" ? "Set ANTHROPIC_API_KEY or install the claude CLI." : ""}`,
+      `${s.ai.model} · planning, narration (English + local language), visual notes, alert digests. ${s.ai.provider === "none" ? "Set ANTHROPIC_API_KEY or install the claude CLI." : ""}`,
+    ],
+    [
+      "Database",
+      <P key="d" ok={s.database.ok} />,
+      `Supabase (${s.database.where}): cases, reports, monitoring and accounts · ${s.database.ok ? `${s.database.ms} ms` : s.database.error ?? ""}`,
     ],
     ["Telegram", <span key="t" className={`pill ${s.telegram ? "ok" : "na"}`}>{s.telegram ? "configured" : "not set"}</span>, "TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID"],
     [
       "Scheduler",
       <span key="s" className={`pill ${s.scheduler ? "ok" : "na"}`}>{s.scheduler ? `every ${s.scheduler.intervalMin} min` : "off"}</span>,
-      "MONITOR_INTERVAL_MINUTES, or an external cron calling /api/monitor/run?secret=...",
+      "MONITOR_INTERVAL_MINUTES on a long-running server; on Vercel, Vercel Cron calls /api/monitor/run (vercel.json)",
     ],
   ];
   return (

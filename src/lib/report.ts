@@ -1,7 +1,8 @@
-// Markdown reports for cases and monitoring runs, stored under .data/reports.
-import { dataPath, listJSON, newId, readJSON, writeJSON } from "./store";
+// Markdown reports for cases and monitoring runs, stored in Supabase (table `reports`).
+import { check, db } from "./supabase/admin";
+import { newId } from "./store";
 import { fmt, fmtP, fmtSigned } from "./format";
-import type { CaseRecord } from "./agents/types";
+import { briefLocal, type CaseRecord } from "./agents/types";
 
 export interface Report {
   id: string;
@@ -15,22 +16,71 @@ export interface Report {
   alerts?: number;
 }
 
-const reportFile = (id: string) => dataPath("reports", `${id}.json`);
+/** A report list entry (no Markdown body). */
+export type ReportSummary = Omit<Report, "markdown">;
 
-export async function saveReport(r: Omit<Report, "id" | "createdAt"> & { id?: string }): Promise<Report> {
-  const rep: Report = { ...r, id: r.id ?? newId(r.kind === "case" ? "rpt" : "mon"), createdAt: new Date().toISOString() };
-  await writeJSON(reportFile(rep.id), rep);
+type ReportRow = {
+  id: string;
+  kind: Report["kind"];
+  title: string;
+  summary: string;
+  markdown?: string;
+  case_id: string | null;
+  grade: string | null;
+  alerts: number | null;
+  created_at: string;
+};
+
+function fromRow(r: ReportRow): Report {
+  return {
+    id: r.id,
+    kind: r.kind,
+    title: r.title,
+    summary: r.summary,
+    markdown: r.markdown ?? "",
+    caseId: r.case_id ?? undefined,
+    grade: r.grade ?? undefined,
+    alerts: r.alerts ?? undefined,
+    createdAt: r.created_at,
+  };
+}
+
+export async function saveReport(r: Omit<Report, "id" | "createdAt"> & { id?: string; userId?: string | null }): Promise<Report> {
+  const { userId, ...rest } = r;
+  const rep: Report = { ...rest, id: r.id ?? newId(r.kind === "case" ? "rpt" : "mon"), createdAt: new Date().toISOString() };
+  check(
+    await db().from("reports").upsert({
+      id: rep.id,
+      kind: rep.kind,
+      title: rep.title,
+      summary: rep.summary,
+      markdown: rep.markdown,
+      case_id: rep.caseId ?? null,
+      grade: rep.grade ?? null,
+      alerts: rep.alerts ?? null,
+      user_id: userId ?? null,
+      created_at: rep.createdAt,
+    }),
+    "save report",
+  );
   return rep;
 }
 
-export async function getReport(id: string) {
+export async function getReport(id: string): Promise<Report | null> {
   if (!/^[\w-]+$/.test(id)) return null;
-  return readJSON<Report | null>(reportFile(id), null);
+  const data = check(await db().from("reports").select("*").eq("id", id).maybeSingle(), "read report");
+  return data ? fromRow(data as ReportRow) : null;
 }
 
-export async function listReports(): Promise<Report[]> {
-  const all = await listJSON<Report>(dataPath("reports"));
-  return all.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+export async function listReports(limit = 300): Promise<ReportSummary[]> {
+  const data = check(
+    await db().from("reports").select("id, kind, title, summary, case_id, grade, alerts, created_at").order("created_at", { ascending: false }).limit(limit),
+    "list reports",
+  );
+  return (data ?? []).map((r) => {
+    const { markdown: _m, ...rest } = fromRow(r as ReportRow);
+    return rest;
+  });
 }
 
 const esc = (s: string) => s.replace(/\|/g, "\\|");
@@ -56,7 +106,8 @@ export function caseMarkdown(rec: CaseRecord): string {
   if (r.verdict) lines.push("## Verdict", "", `**Grade ${r.grade}.** ${r.verdict}`, "");
   if (rec.brief) {
     lines.push("## Brief", "", rec.brief.en, "");
-    if (rec.brief.hi) lines.push("**हिन्दी:** " + rec.brief.hi, "");
+    const local = briefLocal(rec.brief);
+    if (local) lines.push(`**${local.name}:** ${local.text}`, "");
     lines.push(`*Written by ${rec.brief.provider === "template" ? "the fixed template" : "our AI"} from ledger rows only; number check ${rec.brief.checked ? "passed" : "failed"}.*`, "");
   }
   if (s) {

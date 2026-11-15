@@ -1,5 +1,6 @@
 "use client";
 
+import { needsLogin } from "@/lib/client/auth";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { REGIONS, STARTERS, VARIABLES, variableById } from "@/lib/catalog";
@@ -30,6 +31,7 @@ export default function NewCaseForm() {
     if (startYear) body.startYear = Number(startYear);
     try {
       const res = await fetch("/api/cases", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      if (needsLogin(res)) return;
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Could not open the case");
       router.push(`/case/${data.id}`);

@@ -2,7 +2,7 @@
 
 **Every trend gets a trial before it gets a headline.**
 
-MEIKA-X is a multi-agent, evidence-first trend detective for NASA Earth data. You ask a question ("Are Delhi's afternoons getting hotter?") and eight agents open a case in a 3D room. They pull NASA data, measure the trend, test whether it is significant, cross-examine it, check fresh satellite imagery, test candidate drivers, estimate hazard odds and write a Case File in English and Hindi. Every number they report lands in an evidence ledger and comes with an evidence grade from A to D.
+MEIKA-X is a multi-agent, evidence-first trend detective for NASA Earth data. You ask a question about any place on Earth ("Is the Arctic warming faster than the rest of the world?", "Is the Sahel's rain coming back?") and eight agents open a case in a 3D room. They pull NASA data, measure the trend, test whether it is significant, cross-examine it, check fresh satellite imagery, test candidate drivers, estimate hazard odds and write a Case File in English and in the local language of the place (Spanish for Patagonia, Swahili for the Horn of Africa, Arabic for the Nile Delta, and so on). Every number they report lands in an evidence ledger and comes with an evidence grade from A to D.
 
 Built by Team **Zentox** (Tushar Kumar, Aakash Singh Rajput) for the [NASA Space Apps Challenge 2026](https://www.spaceappschallenge.org/2026/), challenge [**Be An Earth System Trend Detective!**](https://www.spaceappschallenge.org/2026/challenges/earth-system-trend-detective/).
 Team page: https://www.spaceappschallenge.org/2026/find-a-team/zentox · Repo: https://github.com/aakash4dev/meika-x
@@ -30,7 +30,7 @@ Team page: https://www.spaceappschallenge.org/2026/find-a-team/zentox · Repo: h
 | How much is it changing | OLS and Sen's slope per decade, % of baseline, total change, years-needed estimate, emergence year |
 | Is it significant | t-test with autocorrelation-adjusted sample size (Santer et al. 2000), Mann-Kendall with Hamed-Rao correction, block-bootstrap interval |
 | One variable can trend opposite ways in different places | **Opposite-story detector**: per-cell trends with Benjamini-Hochberg FDR, flag when significant rises and falls coexist |
-| Audience: students and the public | Plain definitions, verdicts in one sentence, Hindi briefs, starter questions, replayable cases |
+| Audience: students and the public | Plain definitions, verdicts in one sentence, briefs in the local language of each region, one starter question per continent, replayable cases |
 
 ---
 
@@ -45,7 +45,7 @@ Team page: https://www.spaceappschallenge.org/2026/find-a-team/zentox · Repo: h
 | Skeptic | code | Tries to break the finding, assigns the grade | Start/end-year sweep, autocorrelation check, step test, leave-one-year-out, block-shuffle placebo, second-opinion variable, record length |
 | Forecaster | code | Hazard odds for the coming days, then vs now | NASA POWER daily since 1991, analog climatology, Wilson intervals (not a weather forecast) |
 | Exposure | code | What sits in the path | Region area, EONET events, FIRMS fires (with key), share of area with a significant trend |
-| Narrator | **Claude** | Case File brief in English and Hindi | Ledger rows only; an automated checker rejects any number not in the ledger (one retry, then a fixed template) |
+| Narrator | **Claude** | Case File brief in English and the region's local language | Ledger rows only; an automated checker rejects any number not in the ledger (one retry, then a fixed template) |
 
 In the chat and reports the AI is called **Our AI**; it runs on Anthropic Claude (see below).
 
@@ -65,6 +65,8 @@ In the chat and reports the AI is called **Our AI**; it runs on Anthropic Claude
 
 Variables: air temperature, daily maximum temperature, precipitation, root-zone and surface soil wetness, relative and specific humidity, wind, aerosol optical depth, surface sunlight, cloud amount, skin temperature.
 
+Regions: 22 preset regions on every continent, from the Arctic and Greenland to the Amazon, Sahel, Horn of Africa, Southern Africa, Europe, the Gulf, India, China, the Mekong, Borneo and Southeast Australia. NASA POWER is global, so a question about any other place gets its own bounding box (the Chief Detective sets it, at most 20 x 20 degrees).
+
 All responses are cached on disk under `.data/cache`, so a demo keeps working when the venue Wi-Fi is bad.
 
 ---
@@ -73,9 +75,22 @@ All responses are cached on disk under `.data/cache`, so a demo keeps working wh
 
 Every external query is recorded with its exact URL (`sources` on each case). Links appear inline in the chat, the Case File, the ledger, the Narrator's brief (it may cite only links it was given; anything else is stripped) and the Markdown reports. The regional series each case analysed is served as CSV at `/api/cases/{id}/data.csv`. FIRMS API URLs contain the private key, so FIRMS is linked through its public Fire Map instead.
 
-## Storage
+## Database and accounts (Supabase)
 
-No database server. Everything is JSON on disk under `.data/` (gitignored): `cases/` (one file per case plus its satellite snapshots), `reports/`, `watchlist.json`, `alerts.json`, `monitor-state.json`, and `cache/` for NASA API responses. Writes are atomic (temp file then rename). For multi-instance hosting, swap `src/lib/store.ts` for SQLite or Postgres.
+MEIKA-X stores everything in **Supabase**: Postgres for data, Storage for images, Auth for email accounts. The schema is in [`supabase/migrations/`](supabase/migrations/).
+
+| Table / bucket | Holds |
+|---|---|
+| `cases` | One row per case: question, status, grade, region, owner (`user_id`) and the full record (`record jsonb`: transcript, ledger, results, brief). The `case_summaries` view serves lists without the heavy parts |
+| `reports` | Case Files and monitoring reports (Markdown) |
+| `watchlist`, `alerts`, `monitor_state` | Active monitoring |
+| Storage bucket `case-images` | The two MODIS snapshots of each case |
+
+- **Access:** Row Level Security is on for every table. Anyone can *read* cases, reports and monitoring results; all writes go through the Next.js server with the secret key (`src/lib/supabase/admin.ts`, server-only).
+- **Accounts:** email + password sign-up with email confirmation, sign-in, sign-out, password reset and change (`/login`, `/account`). Browsing is open to everyone. **Opening a case, chatting with Our AI and changing monitoring need an account**, because they spend AI credits or change shared state. Each case records who opened it.
+- **Demo login:** the sign-in page has **Continue with the demo account**. It signs the visitor into one shared, pre-confirmed account (`demo@meika-x.example`, created on first use) with full access, so judges can try everything without signing up. The demo password never reaches the browser, and it cannot be reset or changed from the app. Set `DEMO_LOGIN=off` to remove it.
+- **Sessions:** `@supabase/ssr` keeps the session in cookies. `src/proxy.ts` (Next.js 16's renamed middleware) refreshes it on every request.
+- **NASA response cache** stays on the local disk (`.data/cache`, or the temp folder on Vercel). It only speeds things up and is not app data.
 
 ## Where Claude is used, and what happens without it
 
@@ -83,7 +98,7 @@ No database server. Everything is JSON on disk under `.data/` (gitignored): `cas
 |---|---|---|
 | Statistics, grades, maps, drivers, hazard odds, monitoring checks, alerts, reports | No (plain code) | Unchanged |
 | Turning a free-text question into a plan | Claude | Keyword rules pick the variable and region |
-| Narrator brief (EN + Hindi) | Claude | Fixed bilingual template built from the same ledger |
+| Narrator brief (English + local language) | Claude | Fixed English template built from the same ledger (plus Hindi for Indian regions) |
 | Satellite Witness visual note | Claude (vision) | Images are shown without a note |
 | One-paragraph summary of new monitoring alerts | Claude | Alerts are sent without a summary |
 
@@ -98,9 +113,13 @@ No database server. Everything is JSON on disk under `.data/` (gitignored): `cas
 
 ```bash
 npm install
-cp .env.example .env.local     # fill in what you have; everything is optional
+npm run db:start               # local Supabase in Docker (first run downloads images); applies the migrations
+cp .env.example .env.local     # paste the API URL, Publishable key and Secret key that db:start printed
+npm run db:import              # optional: copy an old .data/ JSON store into Supabase
 npm run dev                    # http://localhost:3000
 ```
+
+Local Supabase also gives you **Studio** at http://127.0.0.1:54323 (browse tables) and **Mailpit** at http://127.0.0.1:54324, where the sign-up confirmation and password-reset emails arrive. `npm run db:status` prints the URLs and keys again, `npm run db:reset` rebuilds the local database from the migrations (this deletes local data), and `npm run db:stop` shuts it down.
 
 ```bash
 npm test          # stats engine cross-checked against scipy and pymannkendall
@@ -109,18 +128,23 @@ npm start
 npm run monitor   # one monitoring run from the command line (for system cron)
 ```
 
-Requires Node.js 20+ (tested on 24).
+Requires Node.js 20+ (tested on 24) and Docker (for local Supabase).
 
 ### Configuration (`.env.local`)
 
 | Variable | Purpose |
 |---|---|
+| `NEXT_PUBLIC_SUPABASE_URL` | Supabase API URL (local: `http://127.0.0.1:54321`) **required** |
+| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Public key (`NEXT_PUBLIC_SUPABASE_ANON_KEY` also works) **required** |
+| `SUPABASE_SECRET_KEY` | Server-only secret key (`SUPABASE_SERVICE_ROLE_KEY` also works) **required** |
+| `NEXT_PUBLIC_SITE_URL` | Public site URL, used for auth email links when a request has no origin |
+| `DEMO_LOGIN` | `on` (default) shows **Continue with the demo account**; `off` removes it |
 | `ANTHROPIC_API_KEY` | Claude through the API (needed when deployed) |
 | `CLAUDE_MODEL` | Default `claude-opus-5-5` |
 | `CLAUDE_CLI` | `auto` (default) uses the local `claude` CLI when there is no API key; `off` disables it |
 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | Telegram alerts |
 | `MONITOR_INTERVAL_MINUTES` | Automatic monitoring interval while the server runs (default 60; `0` = off) |
-| `CRON_SECRET` | Lets an external cron call `GET /api/monitor/run?secret=...` |
+| `CRON_SECRET` | Authorises scheduled runs: Vercel Cron sends it as a Bearer token; other crons call `GET /api/monitor/run?secret=...` |
 | `FIRMS_MAP_KEY` | Enables NASA FIRMS fire checks |
 | `NASA_API_KEY` | api.nasa.gov key, optional (no current feature needs it) |
 | `MONITOR_AI_DIGEST` | `off` to skip the Claude summary of new alerts |
@@ -144,11 +168,19 @@ Each alert is sent once (alerts are de-duplicated per region, rule and day; EONE
 | Natural events | A new open EONET event within 0.5° of the region | EONET |
 | Fires | ≥ 25 VIIRS detections in 24 h | FIRMS (key) |
 
-### Deployment notes
+### Deploying to Vercel with Supabase Cloud
 
-- Data lives in `.data/` (JSON files), so host it somewhere with a persistent disk (a VM, Render, Railway or Fly). On serverless hosting, cases and reports won't persist.
-- The local Claude CLI is not available on a server: set `ANTHROPIC_API_KEY` there.
-- On serverless hosting, turn off the in-process scheduler (`MONITOR_INTERVAL_MINUTES=0`) and call `/api/monitor/run?secret=CRON_SECRET` from a cron service.
+1. **Create the cloud database.** Make a project at [supabase.com](https://supabase.com), then push the schema from this repo:
+   ```bash
+   npx supabase login
+   npx supabase link --project-ref <your-project-ref>
+   npm run db:push
+   ```
+2. **Connect Vercel.** Import the repo in Vercel, then add the Supabase integration (Vercel > Integrations > Supabase) so the Supabase variables are set for you. Or set them by hand from Supabase > Project Settings > API Keys: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SECRET_KEY`. Also set `ANTHROPIC_API_KEY` (the local Claude CLI does not exist on Vercel), `CRON_SECRET`, `NEXT_PUBLIC_SITE_URL=https://<your-app>.vercel.app`, and the Telegram/FIRMS keys if you use them.
+3. **Point Auth at the site.** In Supabase > Authentication > URL Configuration, set **Site URL** to `https://<your-app>.vercel.app` and add `https://<your-app>.vercel.app/**` (and `https://*-<team>.vercel.app/**` for preview deployments) to **Redirect URLs**. In **Email Templates**, paste the bodies of `supabase/templates/confirmation.html` and `recovery.html`. The default templates also work, since `/auth/confirm` accepts both link styles.
+4. **Email sending.** Supabase's built-in mailer is rate-limited (a few emails per hour) and meant for testing. For real users, add your own SMTP under Authentication > SMTP Settings.
+5. **Monitoring.** `vercel.json` schedules `/api/monitor/run` daily at 06:00 UTC (the Hobby plan allows daily crons; on Pro you can change it to hourly, `0 * * * *`). Vercel sends `CRON_SECRET` with each call. The in-process scheduler is switched off on Vercel automatically.
+6. **Long cases.** A case keeps running after the API responds (`after()`), for up to `maxDuration = 300` seconds. Cases normally finish in 1–3 minutes.
 
 ---
 
@@ -173,13 +205,15 @@ tests/                    stats tests + reference fixtures (scipy, pymannkendall
 
 | Method | Path | |
 |---|---|---|
-| `POST` | `/api/cases` | `{question, variable?, regionId?, bbox?, startYear?}` → `{id}`; the case runs in the background |
+| `POST` | `/api/cases` | `{question, variable?, regionId?, bbox?, startYear?}` → `{id}`; the case runs in the background (**signed in**) |
 | `GET` | `/api/cases`, `/api/cases/{id}` | List cases; full case (transcript, ledger, results, brief) |
-| `GET/POST/DELETE` | `/api/monitor/watchlist` | Watchlist, alerts, monitor state |
-| `POST` / `GET?secret=` | `/api/monitor/run` | Run checks now (manual / cron) |
+| `GET/POST/DELETE` | `/api/monitor/watchlist` | Watchlist, alerts, monitor state (changes need sign-in) |
+| `POST` / `GET` + `CRON_SECRET` | `/api/monitor/run` | Run checks now (signed in) / scheduled run |
 | `GET` | `/api/reports`, `/api/reports/{id}?format=md` | Reports, Markdown download |
 | `GET` | `/api/events`, `/api/status`, `/api/globe-texture` | EONET events, integration status, Blue Marble texture |
-| `POST` | `/api/telegram/test` | Send a test message |
+| `POST` | `/api/telegram/test` | Send a test message (signed in) |
+| `POST` | `/api/chat` | Ask Our AI (signed in) |
+| `GET` | `/auth/confirm` | Landing page for confirmation and password-reset email links |
 
 ---
 

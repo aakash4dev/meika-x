@@ -91,7 +91,7 @@ export const AGENTS: AgentMeta[] = [
   {
     id: "narrator",
     name: "Narrator",
-    job: "Writes the Case File brief in English and Hindi.",
+    job: "Writes the Case File brief in English and in the local language of the region.",
     tools: "Our AI, ledger rows only, automated number check",
     output: "Text where every number links to a ledger row",
     color: "#d9578f",

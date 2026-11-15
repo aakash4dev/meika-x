@@ -14,7 +14,7 @@ export default function SystemPage() {
         step has a non-AI fallback.
       </p>
       <div style={{ margin: "18px 0" }}>
-        <AgentTree question="Is the monsoon changing the same way everywhere?" snippets={["GET power.larc.nasa.gov", "+ slope per decade", "Mann-Kendall (Hamed-Rao)", "grade = A..D", "GET eonet …/events", "+ FDR 5% per cell", "brief.hi ✓ number check", "Granger p"]} />
+        <AgentTree question="Is rain changing the same way across the Sahel?" snippets={["GET power.larc.nasa.gov", "+ slope per decade", "Mann-Kendall (Hamed-Rao)", "grade = A..D", "GET eonet …/events", "+ FDR 5% per cell", "brief.local ✓ number check", "Granger p"]} />
       </div>
       <div className="card" style={{ marginTop: 12 }}>
         <table>

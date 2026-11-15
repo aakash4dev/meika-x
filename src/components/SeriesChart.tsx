@@ -7,11 +7,13 @@ const W = 760;
 const H = 300;
 const P = { l: 46, r: 14, t: 14, b: 30 };
 
+/** Monthly series with its 12-month mean. No straight trend line is drawn: the trend is reported as numbers
+ * (slope, interval, tests) in the Case File, never as a fitted line on the chart. */
 export default function SeriesChart({ s, units }: { s: SeriesForChart; units: string }) {
   const [mode, setMode] = useState<"anomaly" | "raw">("anomaly");
   const ys = mode === "anomaly" ? s.anomaly : s.raw;
   const geo = useMemo(() => {
-    const vals = mode === "anomaly" ? [...ys, ...s.fitLo, ...s.fitHi] : ys;
+    const vals = ys;
     let lo = Math.min(...vals);
     let hi = Math.max(...vals);
     const pad = (hi - lo) * 0.06 || 1;
@@ -27,22 +29,14 @@ export default function SeriesChart({ s, units }: { s: SeriesForChart; units: st
     const xTicks = years
       .map((yr, i) => ({ yr, i }))
       .filter((d, i) => s.ym[i].endsWith("-01") && d.yr % 5 === 0);
-    const band =
-      s.fitLo.map((v, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join("") +
-      s.fitHi
-        .map((v, i) => [i, v] as const)
-        .reverse()
-        .map(([i, v]) => `L${x(i).toFixed(1)},${y(v).toFixed(1)}`)
-        .join("") +
-      "Z";
-    return { x, y, path, yTicks, xTicks, band, lo, hi };
+    return { x, y, path, yTicks, xTicks, lo, hi };
   }, [ys, s, mode]);
 
   return (
     <div>
       <div className="tabs">
         <button className={`tab ${mode === "anomaly" ? "on" : ""}`} onClick={() => setMode("anomaly")}>
-          Deseasonalised + trend
+          Deseasonalised
         </button>
         <button className={`tab ${mode === "raw" ? "on" : ""}`} onClick={() => setMode("raw")}>
           Raw monthly values
@@ -63,30 +57,17 @@ export default function SeriesChart({ s, units }: { s: SeriesForChart; units: st
           </text>
         ))}
         {mode === "anomaly" && (
-          <>
-            <path d={geo.band} className="chart-band" />
-            <line x1={P.l} x2={W - P.r} y1={geo.y(0)} y2={geo.y(0)} className="chart-zero" strokeDasharray="3 3" />
-          </>
+          <line x1={P.l} x2={W - P.r} y1={geo.y(0)} y2={geo.y(0)} className="chart-zero" strokeDasharray="3 3" />
         )}
         <path d={geo.path(ys)} fill="none" className="chart-raw" strokeWidth={0.8} />
-        {mode === "anomaly" && (
-          <>
-            <path d={geo.path(s.rolling)} fill="none" className="chart-mean" strokeWidth={1.8} />
-            <path d={geo.path(s.fit)} fill="none" className="chart-trend" strokeWidth={2.6} />
-          </>
-        )}
+        {mode === "anomaly" && <path d={geo.path(s.rolling)} fill="none" className="chart-mean" strokeWidth={1.8} />}
         <text x={P.l} y={11} fontSize="10" className="chart-text">
           {mode === "anomaly" ? `anomaly (${units})` : units}
         </text>
       </svg>
       <div className="row tiny muted">
         <span>— grey: monthly</span>
-        {mode === "anomaly" && (
-          <>
-            <span style={{ color: "var(--chart-mean)" }}>— 12-month mean</span>
-            <span style={{ color: "var(--chart-trend)" }}>— linear trend with 95% band</span>
-          </>
-        )}
+        {mode === "anomaly" && <span style={{ color: "var(--chart-mean)" }}>— 12-month mean</span>}
       </div>
     </div>
   );

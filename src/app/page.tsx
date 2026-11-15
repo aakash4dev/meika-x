@@ -1,14 +1,14 @@
 import Link from "next/link";
 import CountUp from "@/components/CountUp";
 import Logo from "@/components/Logo";
-import CaseRoomCard from "@/components/home/CaseRoomCard";
+import CaseRoomCard, { type RoomCardCase } from "@/components/home/CaseRoomCard";
 import AgentTree from "@/components/AgentTree";
 import Capabilities from "@/components/home/Capabilities";
 import DoTabs from "@/components/home/DoTabs";
 import HeroAsk from "@/components/home/HeroAsk";
 import HomeRoom from "@/components/home/HomeRoom";
 import { AGENTS } from "@/lib/agents/meta";
-import { listCases } from "@/lib/agents/runtime";
+import { getCase, listCases } from "@/lib/agents/runtime";
 import type { CaseRecord } from "@/lib/agents/types";
 import { getAlerts, getWatchlist } from "@/lib/monitor/runner";
 import { listReports } from "@/lib/report";
@@ -33,9 +33,14 @@ function Bar({ parts }: { parts: { n: number; color: string; label: string }[] }
 export default async function Home() {
   const [cases, reports, alerts, watch] = await Promise.all([listCases(), listReports(), getAlerts(1000), getWatchlist()]);
   const done = cases.filter((c) => c.status === "done" && c.results.stats);
-  const latest: CaseRecord | null = done.find((c) => (c.sources ?? []).length > 0) ?? done[0] ?? null;
+  const latestSummary = done.find((c) => (c.sources ?? []).length > 0) ?? done[0] ?? null;
+  const roomIds = done.filter((c) => c.plan).slice(0, 6).map((c) => c.id);
+  const [latest, ...roomFull] = await Promise.all([latestSummary ? getCase(latestSummary.id) : null, ...roomIds.map((id) => getCase(id))]);
+  const rooms: RoomCardCase[] = roomFull
+    .filter((c): c is CaseRecord => Boolean(c))
+    .map((c) => ({ id: c.id, question: c.question, plan: c.plan, results: { grade: c.results.grade, verdict: c.results.verdict }, transcript: c.transcript.filter((e) => e.station) }));
   const queries = cases.reduce((s, c) => s + (c.sources?.length ?? 0), 0);
-  const ledgerRows = cases.reduce((s, c) => s + c.ledger.length, 0);
+  const ledgerRows = cases.reduce((s, c) => s + c.ledgerCount, 0);
   const grades = ["A", "B", "C", "D"].map((g) => ({ g, n: done.filter((c) => c.results.grade === g).length }));
   const byStation = STATIONS.map((s) => ({ label: s.name, color: s.color, n: cases.reduce((t, c) => t + (c.sources ?? []).filter((x) => x.station === s.id).length, 0) }));
   const regions = new Map<string, { n: number; bbox: NonNullable<CaseRecord["plan"]>["bbox"] }>();
@@ -57,7 +62,7 @@ export default async function Home() {
     `GET power.larc.nasa.gov`,
     `GET gibs …/MODIS_Terra`,
     led("cells_sig_pos") && `+ cells rising = ${led("cells_sig_pos")!.display}`,
-    `brief.hi ✓ number check`,
+    `brief.local ✓ number check`,
   ].filter(Boolean) as string[];
   const dataTabs = {
     caseId: latest?.id ?? null,
@@ -166,7 +171,7 @@ export default async function Home() {
 
         <div className="lp-subhead">Case rooms · every case keeps its own lab</div>
         <div className="lp-rooms">
-          {done.filter((c) => c.plan).slice(0, 6).map((c, i) => (
+          {rooms.map((c, i) => (
             <CaseRoomCard key={c.id} rec={c} index={i} />
           ))}
         </div>

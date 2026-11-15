@@ -694,7 +694,7 @@ function LabRoom() {
           <meshStandardMaterial color="#1c1916" emissive={C.accent} emissiveIntensity={0.06} />
         </mesh>
         {Array.from({ length: 20 }).map((_, i) => (
-          <mesh key={i} position={[-2 + i * 0.21, 1.85 + Math.abs(Math.sin(i * 0.8)) * 0.15 + i * 0.045, 0.06]}>
+          <mesh key={i} position={[-2 + i * 0.21, 2.35 + Math.sin(i * 0.8) * 0.22 + Math.sin(i * 2.3) * 0.12, 0.06]}>
             <boxGeometry args={[0.12, 0.05, 0.01]} />
             <meshStandardMaterial color={C.accent} emissive={C.accent} emissiveIntensity={1.1} />
           </mesh>
