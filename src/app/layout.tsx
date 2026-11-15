@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import { IBM_Plex_Mono, Inter, Space_Grotesk } from "next/font/google";
 import MotionRoot from "@/components/MotionRoot";
 import Rail from "@/components/Rail";
-import { getUser } from "@/lib/auth";
 import "./globals.css";
 
 const inter = Inter({ subsets: ["latin"], variable: "--f-inter", display: "swap" });
@@ -15,12 +14,11 @@ export const metadata: Metadata = {
     "Every trend gets a trial before it gets a headline. Multi-agent, evidence-first detection of long-term change in NASA Earth data. Team Zentox, NASA Space Apps 2026.",
 };
 
-export default async function RootLayout({ children }: { children: React.ReactNode }) {
-  const user = await getUser();
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className={[inter, plexMono, space].map((f) => f.variable).join(" ")}>
       <body>
-        <Rail user={user ? { email: user.email } : null} />
+        <Rail />
         <MotionRoot />
         <div className="main">{children}</div>
       </body>

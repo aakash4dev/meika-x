@@ -41,7 +41,7 @@ export default function SystemStatus() {
     [
       "Database",
       <P key="d" ok={s.database.ok} />,
-      `Supabase (${s.database.where}): cases, reports, monitoring and accounts · ${s.database.ok ? `${s.database.ms} ms` : s.database.error ?? ""}`,
+      `Supabase (${s.database.where}): cases, reports, monitoring and satellite snapshots · ${s.database.ok ? `${s.database.ms} ms` : s.database.error ?? ""}`,
     ],
     ["Telegram", <span key="t" className={`pill ${s.telegram ? "ok" : "na"}`}>{s.telegram ? "configured" : "not set"}</span>, "TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID"],
     [

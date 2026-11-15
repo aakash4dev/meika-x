@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { requireUser } from "@/lib/auth";
 import { runMonitor } from "@/lib/monitor/runner";
 
 export const runtime = "nodejs";
@@ -8,8 +7,6 @@ export const maxDuration = 300;
 
 /** Manual run from the dashboard. */
 export async function POST() {
-  const user = await requireUser("run the checks");
-  if (user instanceof NextResponse) return user;
   try {
     return NextResponse.json(await runMonitor("manual"));
   } catch (e) {

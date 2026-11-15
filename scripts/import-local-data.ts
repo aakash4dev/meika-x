@@ -36,7 +36,6 @@ async function main() {
     must(
       await sb.from("cases").upsert({
         id: rec.id,
-        user_id: null,
         question: rec.question,
         status: rec.status,
         grade: rec.results?.grade ?? null,

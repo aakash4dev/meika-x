@@ -1,5 +1,4 @@
 import { NextResponse, after } from "next/server";
-import { requireUser } from "@/lib/auth";
 import { createCase, runCase } from "@/lib/agents/pipeline";
 import { countRunningCases, listCases } from "@/lib/agents/runtime";
 import type { CaseRequest } from "@/lib/agents/types";
@@ -26,8 +25,6 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
-  const user = await requireUser("open a case");
-  if (user instanceof NextResponse) return user;
   let body: CaseRequest;
   try {
     body = (await req.json()) as CaseRequest;
@@ -38,7 +35,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "A question is required." }, { status: 400 });
   }
   if ((await countRunningCases()) >= 3) return NextResponse.json({ error: "Three cases are already running. Try again in a minute." }, { status: 429 });
-  const ctx = await createCase(body, user.id);
+  const ctx = await createCase(body);
   after(() => runCase(ctx, body));
   return NextResponse.json({ id: ctx.id }, { status: 201 });
 }

@@ -1,6 +1,5 @@
 "use client";
 
-import { needsLogin } from "@/lib/client/auth";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { DEFAULT_REGION_ID, REGIONS } from "@/lib/catalog";
@@ -60,7 +59,6 @@ export default function MonitorDashboard() {
     setMsg("");
     try {
       const res = await fetch("/api/monitor/run", { method: "POST" });
-      if (needsLogin(res)) return;
       const d = await res.json();
       if (!res.ok) throw new Error(d.error);
       setMsg(d.skipped ? d.reason : `Run complete: ${d.alerts.length} new alert(s). Report ${d.reportId}.`);
@@ -74,7 +72,6 @@ export default function MonitorDashboard() {
   async function testTelegram() {
     setBusy("tg");
     const res = await fetch("/api/telegram/test", { method: "POST" });
-    if (needsLogin(res)) return;
     const d = await res.json();
     setMsg(d.ok ? "Telegram test message sent." : `Telegram: ${d.error}`);
     setBusy("");
@@ -95,7 +92,6 @@ export default function MonitorDashboard() {
       },
     };
     const res = await fetch("/api/monitor/watchlist", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-    if (needsLogin(res)) return;
     const d = await res.json();
     setMsg(res.ok ? `Watching ${d.name}. It will be checked on the next run.` : d.error);
     setBusy("");
@@ -103,8 +99,7 @@ export default function MonitorDashboard() {
   }
 
   async function remove(id: string) {
-    const res = await fetch(`/api/monitor/watchlist?id=${id}`, { method: "DELETE" });
-    if (needsLogin(res)) return;
+    await fetch(`/api/monitor/watchlist?id=${id}`, { method: "DELETE" });
     void load();
   }
 

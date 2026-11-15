@@ -22,7 +22,6 @@ type WatchRow = {
   telegram: boolean;
   last_run: string | null;
   last_checks: CheckResult[] | null;
-  created_by?: string | null;
   created_at: string;
 };
 
@@ -38,7 +37,7 @@ const fromWatchRow = (r: WatchRow): WatchItem => ({
   lastChecks: r.last_checks ?? undefined,
 });
 
-const toWatchRow = (w: WatchItem): Omit<WatchRow, "created_by"> => ({
+const toWatchRow = (w: WatchItem): WatchRow => ({
   id: w.id,
   name: w.name,
   region_id: w.regionId ?? null,
@@ -127,10 +126,7 @@ export async function saveWatchlist(list: WatchItem[]) {
   check(await db().from("watchlist").upsert(list.map(toWatchRow)), "save watchlist");
 }
 
-export async function addWatchItem(
-  input: { name?: string; regionId?: string; bbox?: BBox; rules?: Partial<WatchRules>; telegram?: boolean },
-  userId: string | null = null,
-) {
+export async function addWatchItem(input: { name?: string; regionId?: string; bbox?: BBox; rules?: Partial<WatchRules>; telegram?: boolean }) {
   const region = input.regionId ? regionById(input.regionId) : undefined;
   const bbox = region?.bbox ?? input.bbox;
   if (!bbox) throw new Error("A region or a bounding box is required.");
@@ -144,7 +140,7 @@ export async function addWatchItem(
     telegram: input.telegram ?? true,
     createdAt: new Date().toISOString(),
   };
-  check(await db().from("watchlist").insert({ ...toWatchRow(item), created_by: userId }), "add watch item");
+  check(await db().from("watchlist").insert(toWatchRow(item)), "add watch item");
   return item;
 }
 

@@ -75,21 +75,19 @@ All responses are cached on disk under `.data/cache`, so a demo keeps working wh
 
 Every external query is recorded with its exact URL (`sources` on each case). Links appear inline in the chat, the Case File, the ledger, the Narrator's brief (it may cite only links it was given; anything else is stripped) and the Markdown reports. The regional series each case analysed is served as CSV at `/api/cases/{id}/data.csv`. FIRMS API URLs contain the private key, so FIRMS is linked through its public Fire Map instead.
 
-## Database and accounts (Supabase)
+## Database (Supabase)
 
-MEIKA-X stores everything in **Supabase**: Postgres for data, Storage for images, Auth for email accounts. The schema is in [`supabase/migrations/`](supabase/migrations/).
+MEIKA-X stores everything in **Supabase**: Postgres for data and Storage for images. The schema is in [`supabase/migrations/`](supabase/migrations/).
 
 | Table / bucket | Holds |
 |---|---|
-| `cases` | One row per case: question, status, grade, region, owner (`user_id`) and the full record (`record jsonb`: transcript, ledger, results, brief). The `case_summaries` view serves lists without the heavy parts |
+| `cases` | One row per case: question, status, grade, region and the full record (`record jsonb`: transcript, ledger, results, brief). The `case_summaries` view serves lists without the heavy parts |
 | `reports` | Case Files and monitoring reports (Markdown) |
 | `watchlist`, `alerts`, `monitor_state` | Active monitoring |
 | Storage bucket `case-images` | The two MODIS snapshots of each case |
 
 - **Access:** Row Level Security is on for every table. Anyone can *read* cases, reports and monitoring results; all writes go through the Next.js server with the secret key (`src/lib/supabase/admin.ts`, server-only).
-- **Accounts:** email + password sign-up with email confirmation, sign-in, sign-out, password reset and change (`/login`, `/account`). Browsing is open to everyone. **Opening a case, chatting with Our AI and changing monitoring need an account**, because they spend AI credits or change shared state. Each case records who opened it.
-- **Demo login:** the sign-in page has **Continue with the demo account**. It signs the visitor into one shared, pre-confirmed account (`demo@meika-x.example`, created on first use) with full access, so judges can try everything without signing up. The demo password never reaches the browser, and it cannot be reset or changed from the app. Set `DEMO_LOGIN=off` to remove it.
-- **Sessions:** `@supabase/ssr` keeps the session in cookies. `src/proxy.ts` (Next.js 16's renamed middleware) refreshes it on every request.
+- **No accounts:** the site has no sign-up or login. Anyone can open cases, chat with Our AI and manage monitoring. Only the Next.js server talks to Supabase.
 - **NASA response cache** stays on the local disk (`.data/cache`, or the temp folder on Vercel). It only speeds things up and is not app data.
 
 ## Where Claude is used, and what happens without it
@@ -114,12 +112,12 @@ MEIKA-X stores everything in **Supabase**: Postgres for data, Storage for images
 ```bash
 npm install
 npm run db:start               # local Supabase in Docker (first run downloads images); applies the migrations
-cp .env.example .env.local     # paste the API URL, Publishable key and Secret key that db:start printed
+cp .env.example .env.local     # paste the API URL and Secret key that db:start printed
 npm run db:import              # optional: copy an old .data/ JSON store into Supabase
 npm run dev                    # http://localhost:3000
 ```
 
-Local Supabase also gives you **Studio** at http://127.0.0.1:54323 (browse tables) and **Mailpit** at http://127.0.0.1:54324, where the sign-up confirmation and password-reset emails arrive. `npm run db:status` prints the URLs and keys again, `npm run db:reset` rebuilds the local database from the migrations (this deletes local data), and `npm run db:stop` shuts it down.
+Local Supabase also gives you **Studio** at http://127.0.0.1:54323 to browse the tables. `npm run db:status` prints the URLs and keys again, `npm run db:reset` rebuilds the local database from the migrations (this deletes local data), and `npm run db:stop` shuts it down.
 
 ```bash
 npm test          # stats engine cross-checked against scipy and pymannkendall
@@ -135,10 +133,7 @@ Requires Node.js 20+ (tested on 24) and Docker (for local Supabase).
 | Variable | Purpose |
 |---|---|
 | `NEXT_PUBLIC_SUPABASE_URL` | Supabase API URL (local: `http://127.0.0.1:54321`) **required** |
-| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Public key (`NEXT_PUBLIC_SUPABASE_ANON_KEY` also works) **required** |
 | `SUPABASE_SECRET_KEY` | Server-only secret key (`SUPABASE_SERVICE_ROLE_KEY` also works) **required** |
-| `NEXT_PUBLIC_SITE_URL` | Public site URL, used for auth email links when a request has no origin |
-| `DEMO_LOGIN` | `on` (default) shows **Continue with the demo account**; `off` removes it |
 | `ANTHROPIC_API_KEY` | Claude through the API (needed when deployed) |
 | `CLAUDE_MODEL` | Default `claude-opus-5-5` |
 | `CLAUDE_CLI` | `auto` (default) uses the local `claude` CLI when there is no API key; `off` disables it |
@@ -176,11 +171,9 @@ Each alert is sent once (alerts are de-duplicated per region, rule and day; EONE
    npx supabase link --project-ref <your-project-ref>
    npm run db:push
    ```
-2. **Connect Vercel.** Import the repo in Vercel, then add the Supabase integration (Vercel > Integrations > Supabase) so the Supabase variables are set for you. Or set them by hand from Supabase > Project Settings > API Keys: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SECRET_KEY`. Also set `ANTHROPIC_API_KEY` (the local Claude CLI does not exist on Vercel), `CRON_SECRET`, `NEXT_PUBLIC_SITE_URL=https://<your-app>.vercel.app`, and the Telegram/FIRMS keys if you use them.
-3. **Point Auth at the site.** In Supabase > Authentication > URL Configuration, set **Site URL** to `https://<your-app>.vercel.app` and add `https://<your-app>.vercel.app/**` (and `https://*-<team>.vercel.app/**` for preview deployments) to **Redirect URLs**. In **Email Templates**, paste the bodies of `supabase/templates/confirmation.html` and `recovery.html`. The default templates also work, since `/auth/confirm` accepts both link styles.
-4. **Email sending.** Supabase's built-in mailer is rate-limited (a few emails per hour) and meant for testing. For real users, add your own SMTP under Authentication > SMTP Settings.
-5. **Monitoring.** `vercel.json` schedules `/api/monitor/run` daily at 06:00 UTC (the Hobby plan allows daily crons; on Pro you can change it to hourly, `0 * * * *`). Vercel sends `CRON_SECRET` with each call. The in-process scheduler is switched off on Vercel automatically.
-6. **Long cases.** A case keeps running after the API responds (`after()`), for up to `maxDuration = 300` seconds. Cases normally finish in 1–3 minutes.
+2. **Connect Vercel.** Import the repo in Vercel, then add the Supabase integration (Vercel > Integrations > Supabase) so the Supabase variables are set for you. Or set them by hand from Supabase > Project Settings > API Keys: `NEXT_PUBLIC_SUPABASE_URL` and `SUPABASE_SECRET_KEY`. Also set `ANTHROPIC_API_KEY` (the local Claude CLI does not exist on Vercel), `CRON_SECRET`, and the Telegram/FIRMS keys if you use them.
+3. **Monitoring.** `vercel.json` schedules `/api/monitor/run` daily at 06:00 UTC (the Hobby plan allows daily crons; on Pro you can change it to hourly, `0 * * * *`). Vercel sends `CRON_SECRET` with each call. The in-process scheduler is switched off on Vercel automatically.
+4. **Long cases.** A case keeps running after the API responds (`after()`), for up to `maxDuration = 300` seconds. Cases normally finish in 1–3 minutes.
 
 ---
 
@@ -205,15 +198,14 @@ tests/                    stats tests + reference fixtures (scipy, pymannkendall
 
 | Method | Path | |
 |---|---|---|
-| `POST` | `/api/cases` | `{question, variable?, regionId?, bbox?, startYear?}` → `{id}`; the case runs in the background (**signed in**) |
+| `POST` | `/api/cases` | `{question, variable?, regionId?, bbox?, startYear?}` → `{id}`; the case runs in the background |
 | `GET` | `/api/cases`, `/api/cases/{id}` | List cases; full case (transcript, ledger, results, brief) |
-| `GET/POST/DELETE` | `/api/monitor/watchlist` | Watchlist, alerts, monitor state (changes need sign-in) |
-| `POST` / `GET` + `CRON_SECRET` | `/api/monitor/run` | Run checks now (signed in) / scheduled run |
+| `GET/POST/DELETE` | `/api/monitor/watchlist` | Watchlist, alerts, monitor state |
+| `POST` / `GET` + `CRON_SECRET` | `/api/monitor/run` | Run checks now / scheduled run |
 | `GET` | `/api/reports`, `/api/reports/{id}?format=md` | Reports, Markdown download |
 | `GET` | `/api/events`, `/api/status`, `/api/globe-texture` | EONET events, integration status, Blue Marble texture |
-| `POST` | `/api/telegram/test` | Send a test message (signed in) |
-| `POST` | `/api/chat` | Ask Our AI (signed in) |
-| `GET` | `/auth/confirm` | Landing page for confirmation and password-reset email links |
+| `POST` | `/api/telegram/test` | Send a test message |
+| `POST` | `/api/chat` | Ask Our AI |
 
 ---
 

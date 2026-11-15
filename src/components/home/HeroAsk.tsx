@@ -1,6 +1,5 @@
 "use client";
 
-import { needsLogin } from "@/lib/client/auth";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { STARTERS } from "@/lib/catalog";
@@ -21,7 +20,6 @@ export default function HeroAsk() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ question, variable, regionId }),
       });
-      if (needsLogin(res)) return;
       const d = await res.json();
       if (!res.ok) throw new Error(d.error ?? "Could not open the case");
       router.push(`/case/${d.id}`);

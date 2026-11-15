@@ -45,9 +45,8 @@ function fromRow(r: ReportRow): Report {
   };
 }
 
-export async function saveReport(r: Omit<Report, "id" | "createdAt"> & { id?: string; userId?: string | null }): Promise<Report> {
-  const { userId, ...rest } = r;
-  const rep: Report = { ...rest, id: r.id ?? newId(r.kind === "case" ? "rpt" : "mon"), createdAt: new Date().toISOString() };
+export async function saveReport(r: Omit<Report, "id" | "createdAt"> & { id?: string }): Promise<Report> {
+  const rep: Report = { ...r, id: r.id ?? newId(r.kind === "case" ? "rpt" : "mon"), createdAt: new Date().toISOString() };
   check(
     await db().from("reports").upsert({
       id: rep.id,
@@ -58,7 +57,6 @@ export async function saveReport(r: Omit<Report, "id" | "createdAt"> & { id?: st
       case_id: rep.caseId ?? null,
       grade: rep.grade ?? null,
       alerts: rep.alerts ?? null,
-      user_id: userId ?? null,
       created_at: rep.createdAt,
     }),
     "save report",

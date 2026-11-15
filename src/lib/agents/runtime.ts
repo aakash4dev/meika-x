@@ -23,10 +23,9 @@ function settle<T extends Pick<CaseRecord, "id" | "status" | "updatedAt" | "erro
   return rec;
 }
 
-function row(rec: CaseRecord, userId: string | null) {
+function row(rec: CaseRecord) {
   return {
     id: rec.id,
-    user_id: userId,
     question: rec.question,
     status: rec.status,
     grade: rec.results.grade ?? null,
@@ -76,14 +75,12 @@ export async function countRunningCases(): Promise<number> {
 
 export class CaseContext {
   rec: CaseRecord;
-  readonly userId: string | null;
   private saveTimer: NodeJS.Timeout | null = null;
   /** Writes are chained so an older snapshot can never overwrite a newer one. */
   private saving: Promise<void> = Promise.resolve();
 
-  constructor(rec: CaseRecord, userId: string | null = null) {
+  constructor(rec: CaseRecord) {
     this.rec = rec;
-    this.userId = userId;
     live.set(rec.id, rec);
   }
 
@@ -92,7 +89,7 @@ export class CaseContext {
   }
 
   private save(): Promise<void> {
-    const snapshot = row(structuredClone(this.rec), this.userId);
+    const snapshot = row(structuredClone(this.rec));
     this.saving = this.saving
       .then(async () => {
         const { error } = await db().from("cases").upsert(snapshot);
