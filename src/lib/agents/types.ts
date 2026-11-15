@@ -175,7 +175,7 @@ export interface CaseBrief {
   local?: LocalLanguage & { text: string };
   /** Hindi brief from cases written before briefs became multilingual. */
   hi?: string;
-  provider: "api" | "cli" | "template";
+  provider: "api" | "cli" | "hf" | "template";
   checked: boolean;
   unmatched: string[];
 }

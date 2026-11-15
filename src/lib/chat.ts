@@ -14,7 +14,7 @@ export interface ChatTurn {
 
 export interface ChatAnswer {
   answer: string;
-  provider: "api" | "cli" | "rules";
+  provider: "api" | "cli" | "hf" | "rules";
   suggestCase: { question: string } | null;
   followups: string[];
   verified: boolean;
@@ -112,7 +112,7 @@ export async function askOurAI(question: string, history: ChatTurn[]): Promise<C
     if (!bad.length || attempt === 1) {
       return {
         answer,
-        provider: ai.provider as "api" | "cli",
+        provider: ai.provider as "api" | "cli" | "hf",
         suggestCase: ai.data.suggest_case && ai.data.case_question ? { question: ai.data.case_question } : null,
         followups: ai.data.followups,
         verified: bad.length === 0,

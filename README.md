@@ -103,7 +103,8 @@ MEIKA-X stores everything in **Supabase**: Postgres for data and Storage for ima
 **How MEIKA-X reaches Claude** (in `src/lib/ai/claude.ts`):
 1. If `ANTHROPIC_API_KEY` is set, it uses the Anthropic SDK (`claude-opus-5-5`, structured JSON output, server-side refusal fallbacks enabled). **A deployed site needs this.**
 2. Otherwise it uses your **local Claude Code CLI** (`claude -p --json-schema ...`, no tools except reading the case's two images). This is the default on a laptop where `claude` is installed and logged in.
-3. Otherwise AI features switch off and the fallbacks in the table above take over.
+3. Otherwise, if `HF_TOKEN` is set, it uses **DeepSeek through Hugging Face Inference Providers** (`deepseek-ai/DeepSeek-V4.1-Flash` by default, `HF_MODEL` to change it). It asks for JSON matching the same schemas, and the same zod checks and number checks apply. DeepSeek is text-only here, so the Satellite Witness shows its images without a visual note.
+4. Otherwise AI features switch off and the fallbacks in the table above take over.
 
 ---
 
@@ -136,6 +137,7 @@ Requires Node.js 20+ (tested on 24) and Docker (for local Supabase).
 | `SUPABASE_SECRET_KEY` | Server-only secret key (`SUPABASE_SERVICE_ROLE_KEY` also works) **required** |
 | `ANTHROPIC_API_KEY` | Claude through the API (needed when deployed) |
 | `CLAUDE_MODEL` | Default `claude-opus-5-5` |
+| `HF_TOKEN`, `HF_MODEL` | DeepSeek on Hugging Face, used when Claude is not available (e.g. on Vercel without an Anthropic key) |
 | `CLAUDE_CLI` | `auto` (default) uses the local `claude` CLI when there is no API key; `off` disables it |
 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | Telegram alerts |
 | `MONITOR_INTERVAL_MINUTES` | Automatic monitoring interval while the server runs (default 60; `0` = off) |

@@ -10,7 +10,7 @@ interface Ping {
 }
 interface Status {
   nasa: { power: Ping; eonet: Ping; gibs: Ping; cmr: Ping; firms: string };
-  ai: { provider: "api" | "cli" | "none"; model: string };
+  ai: { provider: "api" | "cli" | "hf" | "none"; model: string };
   telegram: boolean;
   database: { ok: boolean; ms: number; where: "local" | "cloud"; error?: string };
   scheduler: { intervalMin: number; startedAt: string } | null;
@@ -34,9 +34,9 @@ export default function SystemStatus() {
     ["NASA CMR", <P key="c" ok={s.nasa.cmr.ok} />, `Dataset catalogue search, no key · ${s.nasa.cmr.ms} ms`],
     ["NASA FIRMS", <span key="f" className={`pill ${s.nasa.firms === "configured" ? "ok" : "na"}`}>{s.nasa.firms}</span>, "Active fires; set FIRMS_MAP_KEY"],
     [
-      "Claude",
-      <span key="a" className={`pill ${s.ai.provider === "none" ? "na" : "ai"}`}>{s.ai.provider === "api" ? "Anthropic API" : s.ai.provider === "cli" ? "local Claude Code" : "off"}</span>,
-      `${s.ai.model} · planning, narration (English + local language), visual notes, alert digests. ${s.ai.provider === "none" ? "Set ANTHROPIC_API_KEY or install the claude CLI." : ""}`,
+      "AI model",
+      <span key="a" className={`pill ${s.ai.provider === "none" ? "na" : "ai"}`}>{s.ai.provider === "api" ? "Anthropic API" : s.ai.provider === "cli" ? "local Claude Code" : s.ai.provider === "hf" ? "DeepSeek (Hugging Face)" : "off"}</span>,
+      `${s.ai.model} · planning, narration (English + local language), visual notes, alert digests. ${s.ai.provider === "none" ? "Set ANTHROPIC_API_KEY, install the claude CLI, or set HF_TOKEN for DeepSeek." : ""}`,
     ],
     [
       "Database",

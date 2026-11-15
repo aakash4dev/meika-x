@@ -3,7 +3,7 @@ import { STATIONS } from "@/lib/stations";
 
 /**
  * Animated org chart of the agent team: data packets travel along the wires, nodes pulse,
- * the current question rides the main bus, and code-style snippets with real ledger values pop up.
+ * the current question rides the main bus, and a small console cycles through real ledger values.
  * Pure SVG + CSS/SMIL, no client JS.
  */
 
@@ -34,33 +34,34 @@ const LEAVES: Record<string, Leaf[]> = {
   ],
 };
 
+const ROLE: Record<string, string> = {
+  statistician: "trend + tests",
+  witness: "satellite + events",
+  driver: "drivers + lags",
+  skeptic: "tries to break it",
+};
+
 const initials = (n: string) => n.split(" ").map((w) => w[0]).join("");
 
 export default function AgentTree({ question, snippets }: { question: string; snippets: string[] }) {
-  const topY = 62;
+  // rows: Chief -> bus 1 (the question rides it) -> four lead agents -> bus 2 -> tools and helpers
+  const topY = 66;
   const bus1 = 132;
-  const l2y = 186;
-  const bus2 = 262;
-  const l3y = 318;
-  const topPaths = L2.map((n) => `M500 ${topY + 30} V${bus1} H${n.x} V${l2y - 28}`);
-  const leafPaths = L2.flatMap((n) => [-80, 80].map((dx) => `M${n.x} ${l2y + 28} V${bus2} H${n.x + dx} V${l3y - 20}`));
+  const nameY = 164;
+  const l2y = 224;
+  const bus2 = 306;
+  const l3y = 360;
+  const SPREAD = 74;
+  const topPaths = L2.map((n) => `M500 ${topY + 32} V${bus1} H${n.x} V${l2y - 28}`);
+  const leafPaths = L2.flatMap((n) => [-SPREAD, SPREAD].map((dx) => `M${n.x} ${l2y + 28} V${bus2} H${n.x + dx} V${l3y - 20}`));
   const all = [...topPaths, ...leafPaths];
   const q = question.length > 46 ? `${question.slice(0, 44)}…` : question;
   const tagW = q.length * 7.1 + 36;
-  const snip = snippets.slice(0, 8);
-  const snipPos = [
-    [L2[0].x + 34, l2y - 40],
-    [L2[1].x + 34, l2y + 52],
-    [L2[2].x - 150, l2y - 40],
-    [L2[3].x - 160, l2y + 52],
-    [L2[0].x - 110, bus2 - 18],
-    [L2[1].x + 40, bus2 + 30],
-    [L2[2].x + 40, bus2 - 18],
-    [L2[3].x - 40, bus2 + 30],
-  ];
+  // the live-ledger console shows one snippet at a time, in a fixed 8-step cycle
+  const snip = snippets.length ? Array.from({ length: 8 }, (_, i) => snippets[i % snippets.length]) : [];
   return (
     <div className="tree">
-      <svg viewBox="0 0 1000 380" role="img" aria-label="The MEIKA-X agent team at work">
+      <svg viewBox="0 0 1000 428" role="img" aria-label="The MEIKA-X agent team at work">
         <defs>
           <pattern id="circuit" width="40" height="40" patternUnits="userSpaceOnUse">
             <path d="M0 20 H14 M26 20 H40 M20 0 V14 M20 26 V40" stroke="#e2d9cc" strokeWidth="1" fill="none" />
@@ -71,7 +72,7 @@ export default function AgentTree({ question, snippets }: { question: string; sn
           ))}
           <path id="tp-bus" d={`M${L2[0].x} ${bus1} H${L2[3].x}`} />
         </defs>
-        <rect width="1000" height="380" fill="url(#circuit)" opacity="0.7" />
+        <rect width="1000" height="428" fill="url(#circuit)" opacity="0.7" />
 
         {/* wires */}
         {all.map((d, i) => (
@@ -95,7 +96,7 @@ export default function AgentTree({ question, snippets }: { question: string; sn
           </circle>
         ))}
 
-        {/* the current question rides the main bus */}
+        {/* the current question rides the main bus (its own lane: names sit below it) */}
         <g>
           <rect x={-tagW / 2} y="-12" width={tagW} height="24" rx="12" fill="#fffcf7" stroke="var(--accent)" strokeWidth="1.4" />
           <text x={-tagW / 2 + 14} y="4" fontSize="11.5" fill="#1d1a17" fontFamily="var(--font-mono)">
@@ -113,23 +114,32 @@ export default function AgentTree({ question, snippets }: { question: string; sn
           <circle cx="500" cy={topY} r="14" fill="none" stroke="#ececec" strokeWidth="2.4" />
           <ellipse cx="500" cy={topY} rx="22" ry="7" fill="none" stroke="#9a9288" strokeWidth="1.8" transform={`rotate(-24 500 ${topY})`} />
           <polyline points={`488,${topY + 7} 494,${topY + 4} 499,${topY + 6} 505,${topY - 2} 512,${topY - 6}`} fill="none" stroke="var(--accent)" strokeWidth="2.6" strokeLinecap="round" />
-          <text x="560" y={topY + 4} fontSize="12" fontWeight="700" fill="#1d1a17">
+          <text x="560" y={topY - 2} fontSize="13" fontWeight="700" fill="#1d1a17">
             Chief Detective
+          </text>
+          <text x="560" y={topY + 15} fontSize="10.5" fill="#6b645b" fontFamily="var(--font-mono)">
+            plans every case
           </text>
         </g>
 
-        {/* level 2 agents */}
+        {/* level 2 agents: name badges cover the wire behind them, so nothing overlaps */}
         {L2.map((n, i) => {
           const a = agentById(n.id);
+          const role = ROLE[n.id];
+          const w = Math.max(a.name.length * 7.4, role.length * 6.2) + 30;
           return (
             <g key={n.id} className="tree-node">
+              <rect x={n.x - w / 2} y={nameY - 18} width={w} height="36" rx="11" fill="#fffcf7" stroke={a.color} strokeOpacity="0.45" />
+              <text x={n.x} y={nameY - 2} textAnchor="middle" fontSize="12.5" fontWeight="700" fill="#1d1a17">
+                {a.name}
+              </text>
+              <text x={n.x} y={nameY + 12} textAnchor="middle" fontSize="10" fill="#8a8278" fontFamily="var(--font-mono)">
+                {role}
+              </text>
               <circle cx={n.x} cy={l2y} r="36" fill="none" stroke={a.color} strokeWidth="1.5" className="tree-ring" style={{ animationDelay: `${i * 0.6}s` }} />
               <circle cx={n.x} cy={l2y} r="27" fill="#fffcf7" stroke={a.color} strokeWidth="3" />
               <text x={n.x} y={l2y + 5} textAnchor="middle" fontSize="14" fontWeight="800" fill={a.color}>
                 {initials(a.name)}
-              </text>
-              <text x={n.x} y={l2y - 38} textAnchor="middle" fontSize="11.5" fontWeight="700" fill="#1d1a17">
-                {a.name}
               </text>
             </g>
           );
@@ -138,7 +148,7 @@ export default function AgentTree({ question, snippets }: { question: string; sn
         {/* level 3: tools and helper agents */}
         {L2.flatMap((n) =>
           LEAVES[n.id].map((leaf, k) => {
-            const x = n.x + (k ? 80 : -80);
+            const x = n.x + (k ? SPREAD : -SPREAD);
             return (
               <g key={`${n.id}-${k}`} className="tree-node">
                 <circle cx={x} cy={l3y} r="19" fill="#fffcf7" stroke={leaf.color} strokeWidth="2.4" />
@@ -153,19 +163,21 @@ export default function AgentTree({ question, snippets }: { question: string; sn
           }),
         )}
 
-        {/* snippets with real ledger values */}
-        {snip.map((s, i) => {
-          const [x, y] = snipPos[i];
-          const w = s.length * 6.3 + 18;
-          return (
-            <g key={i} className="tree-snip" style={{ animationDelay: `${i * 1.25}s` }}>
-              <rect x={x} y={y - 13} width={w} height="20" rx="5" fill="#fffcf7" stroke="#e0cdb9" />
-              <text x={x + 9} y={y + 1} fontSize="10.5" fill="#3d3631" fontFamily="var(--font-mono)">
-                {s}
+        {/* live-ledger console: real values from the latest case, one at a time, in a corner nothing else uses */}
+        {snip.length > 0 && (
+          <g>
+            <rect x="24" y="22" width="300" height="62" rx="11" fill="#1d1a17" />
+            <circle cx="42" cy="40" r="3.5" fill="var(--accent)" className="tree-dot" />
+            <text x="52" y="44" fontSize="9.5" fontWeight="700" letterSpacing="1.6" fill="#f08a45" fontFamily="var(--font-mono)">
+              LIVE LEDGER
+            </text>
+            {snip.map((s, i) => (
+              <text key={i} x="40" y="69" fontSize="12.5" fill="#f2ece2" fontFamily="var(--font-mono)" className="tree-log" style={{ animationDelay: `${i * 1.6}s` }}>
+                {s.length > 38 ? `${s.slice(0, 37)}…` : s}
               </text>
-            </g>
-          );
-        })}
+            ))}
+          </g>
+        )}
       </svg>
     </div>
   );

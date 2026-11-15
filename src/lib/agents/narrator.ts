@@ -188,7 +188,7 @@ export async function runNarrator(ctx: CaseContext) {
       brief = {
         en: onlyKnownLinks(rec, ai.data.en),
         local: local ? { code: local.code, name: local.name, text: onlyKnownLinks(rec, local.text) } : undefined,
-        provider: ai.provider as "api" | "cli",
+        provider: ai.provider as "api" | "cli" | "hf",
         checked: true,
         unmatched: [],
       };

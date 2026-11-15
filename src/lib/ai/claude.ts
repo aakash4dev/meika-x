@@ -1,5 +1,6 @@
-// Claude access for the AI-specific features (planning, narration, visual notes, digests).
-// Order: Anthropic API (ANTHROPIC_API_KEY / ANTHROPIC_AUTH_TOKEN) -> local Claude Code CLI (`claude -p`) -> none.
+// AI access for the AI-specific features (planning, narration, visual notes, digests).
+// Order: Anthropic API (ANTHROPIC_API_KEY / ANTHROPIC_AUTH_TOKEN) -> local Claude Code CLI (`claude -p`)
+//        -> DeepSeek on Hugging Face (HF_TOKEN) -> none.
 // Every caller has a deterministic fallback, so the app works with no AI at all.
 import Anthropic from "@anthropic-ai/sdk";
 import { spawn } from "child_process";
@@ -7,8 +8,9 @@ import { promises as fs } from "fs";
 import os from "os";
 import path from "path";
 import type { z } from "zod";
+import { HF_MODEL, hfJSON, hfText, hfToken } from "./hf";
 
-export type AiProvider = "api" | "cli" | "none";
+export type AiProvider = "api" | "cli" | "hf" | "none";
 
 export const MODEL = process.env.CLAUDE_MODEL || "claude-opus-5-5";
 
@@ -28,8 +30,12 @@ async function hasCli(): Promise<boolean> {
 export async function aiProvider(): Promise<AiProvider> {
   if (process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN) return "api";
   if (await hasCli()) return "cli";
+  if (hfToken()) return "hf";
   return "none";
 }
+
+/** The model a provider uses (for status and labels). */
+export const modelFor = (p: AiProvider) => (p === "hf" ? HF_MODEL : MODEL);
 
 let client: Anthropic | null = null;
 const api = () => (client ??= new Anthropic());
@@ -161,13 +167,15 @@ export async function aiJSON<T>(opts: {
         raw = null;
       }
     }
+  } else if (provider === "hf") {
+    raw = await hfJSON({ system: opts.system, prompt: opts.prompt, jsonSchema: opts.jsonSchema });
   } else return null;
   const parsed = opts.schema.safeParse(raw);
   if (!parsed.success) {
-    if (raw) console.warn("[claude] output failed validation:", parsed.error.message.slice(0, 300));
+    if (raw) console.warn(`[${provider}] output failed validation:`, parsed.error.message.slice(0, 300));
     return null;
   }
-  return { data: parsed.data, provider, model: MODEL };
+  return { data: parsed.data, provider, model: modelFor(provider) };
 }
 
 /** Free text from Claude, optionally about local JPEG images (all in one directory). */
@@ -196,6 +204,11 @@ export async function aiText(opts: {
       : opts.prompt;
     const r = await cliCall({ system: opts.system, prompt, readDir: images.length ? path.dirname(images[0]) : undefined });
     return r.text ? { data: r.text.trim(), provider, model: MODEL } : null;
+  }
+  if (provider === "hf") {
+    if (images.length) return null; // DeepSeek here is text-only; the Witness shows the images without a note
+    const text = await hfText({ system: opts.system, prompt: opts.prompt });
+    return text ? { data: text, provider, model: HF_MODEL } : null;
   }
   return null;
 }

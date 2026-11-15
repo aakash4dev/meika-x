@@ -489,7 +489,7 @@ html { scroll-behavior: smooth; }
 .tree-dot { animation: pulse 2s ease-in-out infinite; }
 .tree-node { transition: transform 0.3s var(--ease); transform-box: fill-box; transform-origin: center; }
 .tree-node:hover { transform: scale(1.06); }
-.tree-snip { opacity: 0; animation: snip 10s var(--ease) infinite; }
-@keyframes snip { 0% { opacity: 0; transform: translateY(6px); } 6% { opacity: 1; transform: none; } 32% { opacity: 1; transform: none; } 40% { opacity: 0; transform: translateY(-4px); } 100% { opacity: 0; } }
+.tree-log { opacity: 0; animation: treelog 12.8s var(--ease) infinite; }
+@keyframes treelog { 0% { opacity: 0; transform: translateY(5px); } 1.5% { opacity: 1; transform: none; } 11% { opacity: 1; transform: none; } 12.5% { opacity: 0; transform: translateY(-4px); } 100% { opacity: 0; } }
 .lp-treehead { text-align: center; margin-bottom: 18px; }
 .lp-treehead h2 { margin-left: auto; margin-right: auto; }
