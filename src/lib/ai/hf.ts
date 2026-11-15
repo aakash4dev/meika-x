@@ -8,6 +8,32 @@ export const HF_MODEL = process.env.HF_MODEL || "deepseek-ai/DeepSeek-V4.1-Flash
 
 export const hfToken = () => process.env.HF_TOKEN || process.env.HUGGINGFACE_API_KEY || "";
 
+/** Why the last DeepSeek call failed, in words people can act on (shown in the case, chat and status page). */
+export interface HfIssue {
+  kind: "credits" | "auth" | "rate" | "other";
+  status: number;
+  message: string;
+  at: string;
+}
+
+type G = typeof globalThis & { __meikaHfIssue?: HfIssue | null };
+const g = globalThis as G;
+
+export const hfIssue = (): HfIssue | null => g.__meikaHfIssue ?? null;
+
+function noteIssue(status: number, detail: string) {
+  const at = new Date().toISOString();
+  if (status === 402) {
+    g.__meikaHfIssue = { kind: "credits", status, at, message: "Hugging Face credits have run out (HTTP 402). Add pre-paid credits or a PRO plan at huggingface.co/settings/billing." };
+  } else if (status === 401 || status === 403) {
+    g.__meikaHfIssue = { kind: "auth", status, at, message: `Hugging Face rejected the token (HTTP ${status}). Check HF_TOKEN and its "Inference Providers" permission.` };
+  } else if (status === 429) {
+    g.__meikaHfIssue = { kind: "rate", status, at, message: "Hugging Face rate limit reached (HTTP 429). Try again in a minute." };
+  } else {
+    g.__meikaHfIssue = { kind: "other", status, at, message: `DeepSeek on Hugging Face did not answer (${status ? `HTTP ${status}` : "network error"}): ${detail.slice(0, 120)}` };
+  }
+}
+
 /** DeepSeek R1-style models may prefix their answer with a reasoning block. */
 const stripThinking = (t: string) => t.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
 
@@ -35,10 +61,17 @@ async function chat(body: Record<string, unknown>, timeoutMs = 120000): Promise<
       body: JSON.stringify({ model: HF_MODEL, ...body }),
       signal: AbortSignal.timeout(timeoutMs),
     });
-    if (!res.ok) return { status: res.status, text: null, error: (await res.text()).slice(0, 300) };
+    if (!res.ok) {
+      const error = (await res.text()).slice(0, 300);
+      // a 400/422 is a request-format problem handled by the caller's fallbacks, not an outage
+      if (res.status !== 400 && res.status !== 422) noteIssue(res.status, error);
+      return { status: res.status, text: null, error };
+    }
     const data = (await res.json()) as { choices?: { message?: { content?: string | null } }[] };
+    g.__meikaHfIssue = null;
     return { status: res.status, text: data.choices?.[0]?.message?.content ?? null };
   } catch (e) {
+    noteIssue(0, (e as Error).message);
     return { status: 0, text: null, error: (e as Error).message };
   }
 }
@@ -87,4 +120,10 @@ export async function hfText(opts: { system: string; prompt: string }): Promise<
     return null;
   }
   return stripThinking(r.text) || null;
+}
+
+/** Cheapest possible call (one output token), for the status page: null when DeepSeek answers. */
+export async function hfProbe(): Promise<HfIssue | null> {
+  const r = await chat({ messages: [{ role: "user", content: "ping" }], max_tokens: 1 }, 20000);
+  return r.status === 200 ? null : hfIssue();
 }

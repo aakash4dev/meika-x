@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { aiProvider, modelFor } from "@/lib/ai/claude";
+import { hfProbe } from "@/lib/ai/hf";
 import { telegramEnabled } from "@/lib/telegram";
 import { firmsEnabled } from "@/lib/nasa/firms";
 import { schedulerInfo } from "@/lib/monitor/scheduler";
@@ -48,7 +49,7 @@ export async function GET() {
   ]);
   return NextResponse.json({
     nasa: { power, eonet, gibs, cmr, firms: firmsEnabled() ? "configured" : "no key" },
-    ai: { provider, model: modelFor(provider) },
+    ai: { provider, model: modelFor(provider), issue: provider === "hf" ? ((await hfProbe())?.message ?? null) : null },
     database: dbStatus,
     telegram: telegramEnabled(),
     scheduler: schedulerInfo(),

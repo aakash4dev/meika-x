@@ -8,7 +8,7 @@ import { promises as fs } from "fs";
 import os from "os";
 import path from "path";
 import type { z } from "zod";
-import { HF_MODEL, hfJSON, hfText, hfToken } from "./hf";
+import { HF_MODEL, hfIssue, hfJSON, hfText, hfToken } from "./hf";
 
 export type AiProvider = "api" | "cli" | "hf" | "none";
 
@@ -33,6 +33,9 @@ export async function aiProvider(): Promise<AiProvider> {
   if (hfToken()) return "hf";
   return "none";
 }
+
+/** Why the AI is not answering right now (e.g. Hugging Face credits ran out), or null. */
+export const aiIssue = (): string | null => hfIssue()?.message ?? null;
 
 /** The model a provider uses (for status and labels). */
 export const modelFor = (p: AiProvider) => (p === "hf" ? HF_MODEL : MODEL);

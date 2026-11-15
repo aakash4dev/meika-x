@@ -1,6 +1,6 @@
 // Chief Detective: turns a question into a case plan, and writes the final verdict.
 import { z } from "zod";
-import { aiJSON } from "../ai/claude";
+import { aiIssue, aiJSON } from "../ai/claude";
 import { DEFAULT_REGION_ID, REGIONS, VARIABLES, regionById, validBBox, variableById } from "../catalog";
 import { collectionsUrl, searchCollections } from "../nasa/cmr";
 import { POWER_FIRST_YEAR, lastFullYear } from "../nasa/power";
@@ -149,7 +149,8 @@ export async function planCase(ctx: CaseContext, req: CaseRequest): Promise<Case
       rationale = ai.data.rationale;
       plannedBy = "claude";
     } else {
-      await ctx.emit("chief", "warn", "Our AI is not available for planning, so I am using keyword rules instead.");
+      const issue = aiIssue();
+      await ctx.emit("chief", "warn", issue ? `Our AI is offline: ${issue} I am planning with keyword rules instead.` : "Our AI is not available for planning, so I am using keyword rules instead.");
       const sv = scoreVariable(req.question);
       variableId ??= sv.variable.id;
       regionId ??= matchRegion(req.question)?.id;

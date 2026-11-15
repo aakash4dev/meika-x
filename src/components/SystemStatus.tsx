@@ -10,7 +10,7 @@ interface Ping {
 }
 interface Status {
   nasa: { power: Ping; eonet: Ping; gibs: Ping; cmr: Ping; firms: string };
-  ai: { provider: "api" | "cli" | "hf" | "none"; model: string };
+  ai: { provider: "api" | "cli" | "hf" | "none"; model: string; issue?: string | null };
   telegram: boolean;
   database: { ok: boolean; ms: number; where: "local" | "cloud"; error?: string };
   scheduler: { intervalMin: number; startedAt: string } | null;
@@ -35,8 +35,12 @@ export default function SystemStatus() {
     ["NASA FIRMS", <span key="f" className={`pill ${s.nasa.firms === "configured" ? "ok" : "na"}`}>{s.nasa.firms}</span>, "Active fires; set FIRMS_MAP_KEY"],
     [
       "AI model",
-      <span key="a" className={`pill ${s.ai.provider === "none" ? "na" : "ai"}`}>{s.ai.provider === "api" ? "Anthropic API" : s.ai.provider === "cli" ? "local Claude Code" : s.ai.provider === "hf" ? "DeepSeek (Hugging Face)" : "off"}</span>,
-      `${s.ai.model} · planning, narration (English + local language), visual notes, alert digests. ${s.ai.provider === "none" ? "Set ANTHROPIC_API_KEY, install the claude CLI, or set HF_TOKEN for DeepSeek." : ""}`,
+      s.ai.issue ? (
+        <span key="a" className="pill alert">{/credits/i.test(s.ai.issue) ? "out of credits" : "not answering"}</span>
+      ) : (
+        <span key="a" className={`pill ${s.ai.provider === "none" ? "na" : "ai"}`}>{s.ai.provider === "api" ? "Anthropic API" : s.ai.provider === "cli" ? "local Claude Code" : s.ai.provider === "hf" ? "DeepSeek (Hugging Face)" : "off"}</span>
+      ),
+      `${s.ai.issue ? `${s.ai.issue} Until then the app uses its non-AI fallbacks. ` : ""}${s.ai.model} · planning, narration (English + local language), visual notes, alert digests. ${s.ai.provider === "none" ? "Set ANTHROPIC_API_KEY, install the claude CLI, or set HF_TOKEN for DeepSeek." : ""}`,
     ],
     [
       "Database",

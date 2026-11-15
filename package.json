@@ -15,7 +15,8 @@
     "db:status": "supabase status",
     "db:reset": "supabase db reset",
     "db:import": "tsx --conditions=react-server scripts/import-local-data.ts",
-    "db:push": "supabase db push --remote"
+    "db:push": "supabase db push --remote",
+    "db:copy-to-cloud": "tsx scripts/copy-local-to-cloud.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.8.0",

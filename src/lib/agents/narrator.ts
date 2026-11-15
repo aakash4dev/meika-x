@@ -1,7 +1,7 @@
 // Narrator: writes the Case File brief (English plus the region's main local language) from ledger rows only.
 // An automated check rejects any number in the text that does not appear in the ledger or the plan.
 import { z } from "zod";
-import { aiJSON } from "../ai/claude";
+import { aiIssue, aiJSON } from "../ai/claude";
 import { fmt, fmtP, fmtSigned } from "../format";
 import type { CaseContext } from "./runtime";
 import type { CaseBrief, CaseRecord } from "./types";
@@ -200,7 +200,12 @@ export async function runNarrator(ctx: CaseContext) {
   if (!brief) {
     const t = templateBrief(rec);
     brief = { en: t.en, local: t.local, provider: "template", checked: checkBrief(rec, `${t.en}\n${t.local?.text ?? ""}`).length === 0, unmatched: [] };
-    await ctx.emit("narrator", "say", "Our AI was unavailable or failed the number check, so I used the fixed template.");
+    const issue = aiIssue();
+    await ctx.emit(
+      "narrator",
+      issue ? "warn" : "say",
+      issue ? `Our AI is offline: ${issue} I wrote the brief from the fixed template instead.` : "Our AI was unavailable or failed the number check, so I used the fixed template.",
+    );
   }
   rec.brief = brief;
   await ctx.emit("narrator", "done", `Brief ready (${brief.provider === "template" ? "template" : "our AI"}, number check ${brief.checked ? "passed" : "FAILED"}).`);

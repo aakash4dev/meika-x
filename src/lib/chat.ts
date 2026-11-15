@@ -1,7 +1,7 @@
 // "Ask Our AI": answers questions about MEIKA-X, its methods, NASA data and past cases,
 // grounded in a context built from the app's own records. Numbers must come from that context.
 import { z } from "zod";
-import { aiJSON } from "./ai/claude";
+import { aiIssue, aiJSON } from "./ai/claude";
 import { AGENTS } from "./agents/meta";
 import { listCases } from "./agents/runtime";
 import { REGIONS, VARIABLES } from "./catalog";
@@ -120,5 +120,8 @@ export async function askOurAI(question: string, history: ChatTurn[]): Promise<C
     }
     feedback = `\n\nYour previous draft used numbers not in the context: ${bad.join(", ")}. Remove them.`;
   }
-  return rulesAnswer(question);
+  const fallback = rulesAnswer(question);
+  const issue = aiIssue();
+  if (issue) fallback.answer = `**Our AI is offline right now.** ${issue} Here is a built-in answer instead.\n\n${fallback.answer}`;
+  return fallback;
 }
